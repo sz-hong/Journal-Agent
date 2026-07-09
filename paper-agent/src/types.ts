@@ -20,6 +20,14 @@ export interface Env {
    * 3072) must be truncated: set this to "1536". Omit to use the model's default.
    */
   OPENAI_EMBED_DIMENSIONS?: string;
+  /**
+   * Optional OpenAI-compatible base URL (no trailing slash). Set to a
+   * Cloudflare AI Gateway endpoint to avoid OpenAI regional blocks:
+   * https://gateway.ai.cloudflare.com/v1/{account}/{gateway}/openai
+   */
+  OPENAI_BASE_URL?: string;
+  /** Token for an authenticated AI Gateway (sent as cf-aig-authorization). */
+  CF_AIG_TOKEN?: string;
 }
 
 /** A single OpenAI chat message. */

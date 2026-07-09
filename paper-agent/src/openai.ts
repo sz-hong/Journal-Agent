@@ -1,15 +1,23 @@
 import type { Env, ChatMessage } from "./types";
 
-const EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
-const CHAT_URL = "https://api.openai.com/v1/chat/completions";
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
-async function postJson(url: string, apiKey: string, body: unknown): Promise<any> {
+/** Resolve endpoint + headers, honouring an AI Gateway base URL when set. */
+function endpoint(env: Env, path: string): { url: string; headers: Record<string, string> } {
+  const base = (env.OPENAI_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+  if (env.CF_AIG_TOKEN) headers["cf-aig-authorization"] = `Bearer ${env.CF_AIG_TOKEN}`;
+  return { url: `${base}${path}`, headers };
+}
+
+async function postJson(env: Env, path: string, body: unknown): Promise<any> {
+  const { url, headers } = endpoint(env, path);
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -28,7 +36,7 @@ async function postJson(url: string, apiKey: string, body: unknown): Promise<any
 export async function embedTexts(env: Env, inputs: string[]): Promise<number[][]> {
   if (inputs.length === 0) return [];
   const dims = env.OPENAI_EMBED_DIMENSIONS ? Number(env.OPENAI_EMBED_DIMENSIONS) : undefined;
-  const json = await postJson(EMBEDDINGS_URL, env.OPENAI_API_KEY, {
+  const json = await postJson(env, "/embeddings", {
     model: env.OPENAI_EMBED_MODEL,
     input: inputs,
     ...(dims ? { dimensions: dims } : {}),
@@ -57,7 +65,7 @@ function chatBody(env: Env, messages: ChatMessage[]): Record<string, unknown> {
 
 /** Run a chat completion and return the assistant's message content. */
 export async function chat(env: Env, messages: ChatMessage[]): Promise<string> {
-  const json = await postJson(CHAT_URL, env.OPENAI_API_KEY, chatBody(env, messages));
+  const json = await postJson(env, "/chat/completions", chatBody(env, messages));
   return json.choices?.[0]?.message?.content ?? "";
 }
 
@@ -66,12 +74,10 @@ export async function chat(env: Env, messages: ChatMessage[]): Promise<string> {
  * arrive. Parses OpenAI's SSE format (`data: {...}` lines, `data: [DONE]`).
  */
 export async function* chatStream(env: Env, messages: ChatMessage[]): AsyncGenerator<string> {
-  const res = await fetch(CHAT_URL, {
+  const { url, headers } = endpoint(env, "/chat/completions");
+  const res = await fetch(url, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({ ...chatBody(env, messages), stream: true }),
   });
   if (!res.ok || !res.body) {

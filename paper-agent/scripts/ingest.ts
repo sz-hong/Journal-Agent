@@ -66,11 +66,15 @@ async function main() {
     console.error("Missing OPENAI_API_KEY (set it in paper-agent/.dev.vars or the environment).");
     process.exit(1);
   }
+  const devVars = readDevVars();
   const env = {
     OPENAI_API_KEY: apiKey,
     OPENAI_EMBED_MODEL: EMBED_MODEL,
     OPENAI_EMBED_DIMENSIONS: EMBED_DIMENSIONS,
-    OPENAI_CHAT_MODEL: process.env.OPENAI_CHAT_MODEL || readDevVars().OPENAI_CHAT_MODEL || "gpt-5.4",
+    OPENAI_CHAT_MODEL: process.env.OPENAI_CHAT_MODEL || devVars.OPENAI_CHAT_MODEL || "gpt-5.4",
+    // Optional AI Gateway routing for local runs too (set in .dev.vars).
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || devVars.OPENAI_BASE_URL,
+    CF_AIG_TOKEN: process.env.CF_AIG_TOKEN || devVars.CF_AIG_TOKEN,
   } as unknown as Env;
 
   const pdfs = readdirSync(PAPERS_DIR).filter((f) => f.toLowerCase().endsWith(".pdf"));

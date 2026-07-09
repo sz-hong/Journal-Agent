@@ -115,6 +115,51 @@ describe("chat", () => {
   });
 });
 
+describe("AI Gateway routing", () => {
+  it("uses OPENAI_BASE_URL and sends cf-aig-authorization when configured", async () => {
+    const fetchMock = mockFetch({ data: [{ embedding: [0.1] }] });
+    const gwEnv = {
+      ...env,
+      OPENAI_BASE_URL: "https://gateway.ai.cloudflare.com/v1/acct/journal-agent/openai",
+      CF_AIG_TOKEN: "aig-secret",
+    } as unknown as Env;
+
+    await embedTexts(gwEnv, ["a"]);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("https://gateway.ai.cloudflare.com/v1/acct/journal-agent/openai/embeddings");
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["cf-aig-authorization"]).toBe("Bearer aig-secret");
+    expect(headers["Authorization"]).toBe("Bearer sk-test"); // OpenAI key still present
+  });
+
+  it("defaults to api.openai.com with no gateway header when unset", async () => {
+    const fetchMock = mockFetch({ data: [{ embedding: [0.1] }] });
+    await embedTexts(env, ["a"]);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("https://api.openai.com/v1/embeddings");
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["cf-aig-authorization"]).toBeUndefined();
+  });
+
+  it("applies the gateway base to streaming chat too", async () => {
+    const fetchMock = vi.fn(async (_url?: unknown, _init?: unknown) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            c.close();
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const gwEnv = { ...env, OPENAI_BASE_URL: "https://gw.example/openai" } as unknown as Env;
+    for await (const _ of chatStream(gwEnv, [{ role: "user", content: "q" }])) void _;
+    expect(String(fetchMock.mock.calls[0][0])).toBe("https://gw.example/openai/chat/completions");
+  });
+});
+
 describe("chatStream", () => {
   function sseResponse(lines: string[]) {
     const body = new ReadableStream<Uint8Array>({
