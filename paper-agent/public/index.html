@@ -109,6 +109,9 @@
         border-radius: 10px; padding: 10px 18px;
       }
       .upload-btn input { display: none; }
+      #dropZone { border: 2px dashed transparent; transition: border-color .15s ease, background .15s ease; }
+      #dropZone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+      #dropZone.dragover * { pointer-events: none; }
       #uploadHint { color: var(--muted); font-size: 13px; }
       .progress-wrap { margin-top: 14px; display: none; }
       .progress-label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
@@ -117,8 +120,8 @@
       .progress-fill.indeterminate { width: 35% !important; animation: slide 1.1s ease-in-out infinite; }
       @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
       #uploadResult { margin-top: 10px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-      #uploadResult.ok { color: var(--ok); }
-      #uploadResult.err { color: var(--danger); }
+      #uploadResult .ok { color: var(--ok); }
+      #uploadResult .err { color: var(--danger); }
 
       .papers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
       .paper-card { position: relative; cursor: pointer; transition: transform .12s ease; }
@@ -208,13 +211,13 @@
         </div>
 
         <div class="section-title">新增論文</div>
-        <div class="card">
+        <div class="card" id="dropZone">
           <div class="upload-row">
             <label class="upload-btn">
               選擇 PDF 上傳
-              <input type="file" id="file" accept="application/pdf" />
+              <input type="file" id="file" accept="application/pdf" multiple />
             </label>
-            <span id="uploadHint">上傳後會自動解析、嵌入並生成繁體中文摘要</span>
+            <span id="uploadHint">或直接把 PDF 拖曳到這個區塊（可一次拖多個）</span>
           </div>
           <div class="progress-wrap" id="progressWrap">
             <div class="progress-label"><span id="progressPhase">上傳中</span><span id="progressPct"></span></div>
@@ -449,59 +452,112 @@
         }
       });
 
-      // ---------- 上傳（XHR 進度條） ----------
-      $("file").addEventListener("change", () => {
-        const file = $("file").files[0];
-        if (!file) return;
-        const wrap = $("progressWrap"), fill = $("progressFill"),
-              phase = $("progressPhase"), pct = $("progressPct"), result = $("uploadResult");
-        wrap.style.display = "block";
-        fill.classList.remove("indeterminate");
-        fill.style.width = "0%";
-        phase.textContent = "上傳中";
-        pct.textContent = "0%";
-        result.textContent = "";
-        result.className = "";
-
-        const fd = new FormData();
-        fd.append("file", file);
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", `/s/${SID}/ingest`);
-        xhr.upload.onprogress = (e) => {
-          if (!e.lengthComputable) return;
-          const p = Math.round((e.loaded / e.total) * 100);
-          fill.style.width = p + "%";
-          pct.textContent = p + "%";
-          if (p >= 100) {
-            phase.textContent = "解析與嵌入中…（生成摘要需要一點時間）";
-            pct.textContent = "";
-            fill.classList.add("indeterminate");
-          }
-        };
-        xhr.onload = () => {
-          wrap.style.display = "none";
+      // ---------- 上傳（XHR 進度條 + 拖曳 + 多檔佇列） ----------
+      function uploadFile(file, positionLabel) {
+        return new Promise((resolve) => {
+          const wrap = $("progressWrap"), fill = $("progressFill"),
+                phase = $("progressPhase"), pct = $("progressPct"), result = $("uploadResult");
+          wrap.style.display = "block";
           fill.classList.remove("indeterminate");
-          try {
-            const data = JSON.parse(xhr.responseText);
-            if (xhr.status !== 200) throw new Error(data.error || "ingest failed");
-            result.className = "ok";
-            result.textContent = `✓ 已加入「${data.title}」（${data.added} 個片段）` +
-              (data.summary ? `\n摘要：${data.summary.slice(0, 120)}…` : "");
-            loadPapers();
-          } catch (err) {
-            result.className = "err";
-            result.textContent = "✗ " + err.message;
-          }
-          $("file").value = "";
-        };
-        xhr.onerror = () => {
-          wrap.style.display = "none";
-          result.className = "err";
-          result.textContent = "✗ 網路錯誤，請重試";
-          $("file").value = "";
-        };
-        xhr.send(fd);
+          fill.style.width = "0%";
+          phase.textContent = `上傳中${positionLabel}：${file.name}`;
+          pct.textContent = "0%";
+
+          const fd = new FormData();
+          fd.append("file", file);
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", `/s/${SID}/ingest`);
+          xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable) return;
+            const p = Math.round((e.loaded / e.total) * 100);
+            fill.style.width = p + "%";
+            pct.textContent = p + "%";
+            if (p >= 100) {
+              phase.textContent = `解析與嵌入中${positionLabel}…（生成摘要需要一點時間）`;
+              pct.textContent = "";
+              fill.classList.add("indeterminate");
+            }
+          };
+          xhr.onload = () => {
+            fill.classList.remove("indeterminate");
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (xhr.status !== 200) throw new Error(data.error || "ingest failed");
+              appendUploadResult("ok", `✓ 已加入「${data.title}」（${data.added} 個片段）` +
+                (data.summary ? `\n　摘要：${data.summary.slice(0, 100)}…` : ""));
+              loadPapers();
+            } catch (err) {
+              appendUploadResult("err", `✗ ${file.name}：${err.message}`);
+            }
+            resolve();
+          };
+          xhr.onerror = () => {
+            fill.classList.remove("indeterminate");
+            appendUploadResult("err", `✗ ${file.name}：網路錯誤`);
+            resolve();
+          };
+          xhr.send(fd);
+        });
+      }
+
+      function appendUploadResult(cls, text) {
+        const result = $("uploadResult");
+        const line = document.createElement("div");
+        line.className = cls;
+        line.textContent = text;
+        result.appendChild(line);
+      }
+
+      let uploading = false;
+      async function uploadFiles(fileList) {
+        const pdfs = [...fileList].filter(
+          (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name),
+        );
+        if (pdfs.length === 0) {
+          appendUploadResult("err", "✗ 只接受 PDF 檔案");
+          return;
+        }
+        if (uploading) {
+          appendUploadResult("err", "✗ 上一批還在處理中，請稍候");
+          return;
+        }
+        uploading = true;
+        $("uploadResult").innerHTML = "";
+        for (let i = 0; i < pdfs.length; i++) {
+          const label = pdfs.length > 1 ? `（${i + 1}/${pdfs.length}）` : "";
+          await uploadFile(pdfs[i], label);
+        }
+        $("progressWrap").style.display = "none";
+        uploading = false;
+      }
+
+      $("file").addEventListener("change", () => {
+        uploadFiles($("file").files);
+        $("file").value = "";
       });
+
+      // 拖曳上傳
+      const dropZone = $("dropZone");
+      for (const evt of ["dragenter", "dragover"]) {
+        dropZone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add("dragover");
+        });
+      }
+      for (const evt of ["dragleave", "drop"]) {
+        dropZone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove("dragover");
+        });
+      }
+      dropZone.addEventListener("drop", (e) => {
+        if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files);
+      });
+      // 防止拖到視窗其他地方時瀏覽器直接開啟 PDF
+      window.addEventListener("dragover", (e) => e.preventDefault());
+      window.addEventListener("drop", (e) => e.preventDefault());
 
       // ---------- 聊天室 ----------
       function addMessage(role, text, citations) {
