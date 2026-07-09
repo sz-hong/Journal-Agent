@@ -18,8 +18,9 @@
     // Vectorize caps indexes at 1536 dims; 3-large (native 3072) is truncated.
     "OPENAI_EMBED_DIMENSIONS": "1536",
     // Route OpenAI via AI Gateway: avoids 403 unsupported_country_region_territory
-    // from blocked egress colos. Remove to talk to api.openai.com directly.
-    "OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/1f1186cefb9eab73c68015b357f111d9/journal-agent/openai"
+    // from blocked egress colos. Re-add once the gateway exists in the dashboard:
+    // "OPENAI_BASE_URL": "https://gateway.ai.cloudflare.com/v1/1f1186cefb9eab73c68015b357f111d9/<gateway-slug>/openai"
+    "OPENAI_BASE_URL": ""
   },
   "vectorize": [
     {
