@@ -10,7 +10,8 @@ a **paper-reading AI agent** over the collection of reference PDFs.
 ## Contents
 
 - **6 reference PDFs** — facial-recognition literature (techniques, disease-diagnosis applications,
-  attendance systems, policing/regulation, societal impact, ethics).
+  attendance systems, policing/regulation, societal impact, ethics). **Local only — gitignored**,
+  not published to GitHub (copyright).
 - `outline.md` — per-paper summaries of all 6 papers plus a cross-paper comparison.
 - `paper-agent/` — **primary app**: a Cloudflare-native TypeScript agent (Worker + Vectorize + OpenAI)
   that answers questions, compares papers, and ingests new PDFs, with a web chat UI. See

@@ -1,6 +1,9 @@
 # Secrets — never commit
 paper-agent/.dev.vars
 
+# Reference papers — keep local only (copyright); do not publish to GitHub
+*.pdf
+
 # Dependencies / build artifacts
 paper-agent/node_modules/
 paper-agent/.wrangler/
