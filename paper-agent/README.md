@@ -18,7 +18,7 @@ Cloudflare Worker (Hono, src/index.ts)
    ├── POST /ingest  upload PDF → unpdf → chunk → OpenAI embed → Vectorize upsert → KV record
    └── GET  /papers  list ingested papers (KV)
 Bindings: VECTORIZE · PAPERS_KV · ASSETS   Secret: OPENAI_API_KEY
-Models: text-embedding-3-small · gpt-4o-mini (configurable in wrangler.jsonc vars)
+Models: text-embedding-3-large (truncated to 1536 dims — Vectorize max) · gpt-5.4 (wrangler.jsonc vars)
 ```
 
 Only OpenAI calls are billed (embeddings + generation). Cloudflare Vectorize/KV/Workers have free-tier allowances.
@@ -32,7 +32,9 @@ npm install
 # 1) Cloudflare login (opens browser)
 npx wrangler login
 
-# 2) Create the vector index (1536 dims = text-embedding-3-small) and the KV namespace
+# 2) Create the vector index and the KV namespace.
+#    1536 is Vectorize's max dimension; text-embedding-3-large (native 3072)
+#    is truncated to 1536 via the OpenAI `dimensions` parameter.
 npx wrangler vectorize create paper-index --dimensions=1536 --metric=cosine
 npx wrangler kv namespace create PAPERS_KV
 #    → copy the printed `id` into wrangler.jsonc (kv_namespaces[0].id)

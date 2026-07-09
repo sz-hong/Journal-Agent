@@ -52,6 +52,27 @@ describe("embedTexts", () => {
     mockFetch({ error: { message: "bad key" } }, false, 401);
     await expect(embedTexts(env, ["a"])).rejects.toThrow(/401|bad key|OpenAI/i);
   });
+
+  it("passes dimensions when OPENAI_EMBED_DIMENSIONS is set (e.g. 3-large truncated to 1536)", async () => {
+    const fetchMock = mockFetch({ data: [{ embedding: [0.1] }] });
+    const largeEnv = {
+      ...env,
+      OPENAI_EMBED_MODEL: "text-embedding-3-large",
+      OPENAI_EMBED_DIMENSIONS: "1536",
+    } as unknown as Env;
+
+    await embedTexts(largeEnv, ["a"]);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.model).toBe("text-embedding-3-large");
+    expect(body.dimensions).toBe(1536);
+  });
+
+  it("omits dimensions when OPENAI_EMBED_DIMENSIONS is unset", async () => {
+    const fetchMock = mockFetch({ data: [{ embedding: [0.1] }] });
+    await embedTexts(env, ["a"]);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).not.toHaveProperty("dimensions");
+  });
 });
 
 describe("embedQuery", () => {
@@ -75,5 +96,21 @@ describe("chat", () => {
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.model).toBe("gpt-4o-mini");
     expect(body.messages).toEqual([{ role: "user", content: "q" }]);
+  });
+
+  it("sends temperature for gpt-4 family models", async () => {
+    const fetchMock = mockFetch({ choices: [{ message: { content: "x" } }] });
+    await chat(env, [{ role: "user", content: "q" }]);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.temperature).toBe(0.2);
+  });
+
+  it("omits temperature for gpt-5/o-series models (they reject non-default values)", async () => {
+    const fetchMock = mockFetch({ choices: [{ message: { content: "x" } }] });
+    const gpt5Env = { ...env, OPENAI_CHAT_MODEL: "gpt-5.4" } as unknown as Env;
+    await chat(gpt5Env, [{ role: "user", content: "q" }]);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.model).toBe("gpt-5.4");
+    expect(body).not.toHaveProperty("temperature");
   });
 });

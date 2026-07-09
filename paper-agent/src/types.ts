@@ -12,8 +12,14 @@ export interface Env {
   OPENAI_API_KEY: string;
   /** Chat model id, e.g. "gpt-4o-mini". */
   OPENAI_CHAT_MODEL: string;
-  /** Embedding model id, e.g. "text-embedding-3-small". */
+  /** Embedding model id, e.g. "text-embedding-3-large". */
   OPENAI_EMBED_MODEL: string;
+  /**
+   * Optional output dimension for embedding-3 models (Matryoshka truncation).
+   * Vectorize caps indexes at 1536 dims, so text-embedding-3-large (native
+   * 3072) must be truncated: set this to "1536". Omit to use the model's default.
+   */
+  OPENAI_EMBED_DIMENSIONS?: string;
 }
 
 /** A single OpenAI chat message. */

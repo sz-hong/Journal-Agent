@@ -24,7 +24,8 @@ const DATA_DIR = join(PROJECT, "data");
 const VECTORS_FILE = join(DATA_DIR, "vectors.ndjson");
 const KV_FILE = join(DATA_DIR, "papers-kv.json");
 const INDEX_NAME = "paper-index";
-const EMBED_MODEL = "text-embedding-3-small";
+const EMBED_MODEL = "text-embedding-3-large";
+const EMBED_DIMENSIONS = "1536"; // Vectorize max; 3-large is Matryoshka-truncated
 
 /** Friendly titles (matches the Python ingest); falls back to the file name. */
 const PAPER_TITLES: Record<string, string> = {
@@ -56,7 +57,11 @@ async function main() {
     console.error("Missing OPENAI_API_KEY (set it in paper-agent/.dev.vars or the environment).");
     process.exit(1);
   }
-  const env = { OPENAI_API_KEY: apiKey, OPENAI_EMBED_MODEL: EMBED_MODEL } as unknown as Env;
+  const env = {
+    OPENAI_API_KEY: apiKey,
+    OPENAI_EMBED_MODEL: EMBED_MODEL,
+    OPENAI_EMBED_DIMENSIONS: EMBED_DIMENSIONS,
+  } as unknown as Env;
 
   const pdfs = readdirSync(PAPERS_DIR).filter((f) => f.toLowerCase().endsWith(".pdf"));
   if (pdfs.length === 0) {

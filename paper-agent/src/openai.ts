@@ -27,9 +27,11 @@ async function postJson(url: string, apiKey: string, body: unknown): Promise<any
 /** Embed a batch of texts. Returns one vector per input, in order. */
 export async function embedTexts(env: Env, inputs: string[]): Promise<number[][]> {
   if (inputs.length === 0) return [];
+  const dims = env.OPENAI_EMBED_DIMENSIONS ? Number(env.OPENAI_EMBED_DIMENSIONS) : undefined;
   const json = await postJson(EMBEDDINGS_URL, env.OPENAI_API_KEY, {
     model: env.OPENAI_EMBED_MODEL,
     input: inputs,
+    ...(dims ? { dimensions: dims } : {}),
   });
   return (json.data as Array<{ embedding: number[] }>).map((d) => d.embedding);
 }
@@ -40,12 +42,17 @@ export async function embedQuery(env: Env, text: string): Promise<number[]> {
   return vec;
 }
 
+/** gpt-5 and o-series reasoning models only accept the default temperature. */
+function supportsTemperature(model: string): boolean {
+  return !/^(gpt-5|o\d)/.test(model);
+}
+
 /** Run a chat completion and return the assistant's message content. */
 export async function chat(env: Env, messages: ChatMessage[]): Promise<string> {
   const json = await postJson(CHAT_URL, env.OPENAI_API_KEY, {
     model: env.OPENAI_CHAT_MODEL,
     messages,
-    temperature: 0.2,
+    ...(supportsTemperature(env.OPENAI_CHAT_MODEL) ? { temperature: 0.2 } : {}),
   });
   return json.choices?.[0]?.message?.content ?? "";
 }

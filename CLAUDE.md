@@ -20,8 +20,8 @@ a **paper-reading AI agent** over the collection of reference PDFs.
 
 ## paper-agent (the app)
 
-Stack: TypeScript · Cloudflare Workers (Hono) · Cloudflare Vectorize · OpenAI (`text-embedding-3-small`
-+ `gpt-4o-mini`). Local embeddings are **not** used here — both embeddings and generation go through OpenAI.
+Stack: TypeScript · Cloudflare Workers (Hono) · Cloudflare Vectorize · OpenAI (`text-embedding-3-large`
+truncated to 1536 dims + `gpt-5.4`). Local embeddings are **not** used here — both embeddings and generation go through OpenAI.
 Tests are written test-first (Vitest) in plain Node with hand-injected mock bindings.
 
 Common commands (run from `paper-agent/`):
