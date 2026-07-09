@@ -21,7 +21,7 @@
   "kv_namespaces": [
     {
       "binding": "PAPERS_KV",
-      "id": "PLACEHOLDER_REPLACE_AFTER_kv_namespace_create"
+      "id": "ea3fd407c1da468d96e18543a20c40e6"
     }
   ]
   // Secret (do NOT put here): OPENAI_API_KEY
