@@ -22,6 +22,12 @@ const paperPrefix = (sid: string) => `s:${sid}:paper:`;
 
 const app = new Hono<{ Bindings: Env; Variables: { sid: string } }>();
 
+/** Surface unhandled errors as JSON so the UI (and debugging) sees the cause. */
+app.onError((err, c) => {
+  console.error("unhandled error:", err);
+  return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+});
+
 /** Validate the session id once for every session-scoped route. */
 app.use("/s/:sid/*", async (c, next) => {
   const sid = c.req.param("sid");

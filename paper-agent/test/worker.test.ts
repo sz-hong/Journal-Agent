@@ -127,6 +127,25 @@ function makeEnv(kv = makeKv()): Env & { KV: ReturnType<typeof makeKv> } {
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
 
+describe("error surfacing", () => {
+  it("returns the underlying error message as JSON on unhandled failures", async () => {
+    installOpenAiMock();
+    const env = makeEnv();
+    (env.VECTORIZE.query as any).mockRejectedValue(new Error("vector index exploded"));
+    const res = await app.fetch(
+      new Request(`http://x/s/${SID}/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chatId: "c1", message: "q", stream: false }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as any).error).toContain("vector index exploded");
+  });
+});
+
 describe("session id validation", () => {
   it("400s on a malformed session id", async () => {
     const res = await app.fetch(new Request("http://x/s/ab/papers"), makeEnv(), ctx);
