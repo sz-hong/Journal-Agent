@@ -47,12 +47,60 @@ function supportsTemperature(model: string): boolean {
   return !/^(gpt-5|o\d)/.test(model);
 }
 
-/** Run a chat completion and return the assistant's message content. */
-export async function chat(env: Env, messages: ChatMessage[]): Promise<string> {
-  const json = await postJson(CHAT_URL, env.OPENAI_API_KEY, {
+function chatBody(env: Env, messages: ChatMessage[]): Record<string, unknown> {
+  return {
     model: env.OPENAI_CHAT_MODEL,
     messages,
     ...(supportsTemperature(env.OPENAI_CHAT_MODEL) ? { temperature: 0.2 } : {}),
-  });
+  };
+}
+
+/** Run a chat completion and return the assistant's message content. */
+export async function chat(env: Env, messages: ChatMessage[]): Promise<string> {
+  const json = await postJson(CHAT_URL, env.OPENAI_API_KEY, chatBody(env, messages));
   return json.choices?.[0]?.message?.content ?? "";
+}
+
+/**
+ * Run a streaming chat completion, yielding assistant text deltas as they
+ * arrive. Parses OpenAI's SSE format (`data: {...}` lines, `data: [DONE]`).
+ */
+export async function* chatStream(env: Env, messages: ChatMessage[]): AsyncGenerator<string> {
+  const res = await fetch(CHAT_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ...chatBody(env, messages), stream: true }),
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`OpenAI request failed (${res.status}): ${detail}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE events are separated by a blank line; keep the tail in the buffer.
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+    for (const event of events) {
+      for (const line of event.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return;
+        try {
+          const text = JSON.parse(data).choices?.[0]?.delta?.content;
+          if (typeof text === "string" && text.length > 0) yield text;
+        } catch {
+          // ignore malformed keep-alive/partial lines
+        }
+      }
+    }
+  }
 }

@@ -17,6 +17,23 @@ export function matchesToContexts(matches: VectorizeMatch[]): RetrievedContext[]
   return out;
 }
 
+/**
+ * Merge context lists from multiple search queries: dedupe identical chunks
+ * (same source file, page, and text) keeping the best score, sort by score
+ * descending, and cap the result.
+ */
+export function mergeContexts(lists: RetrievedContext[][], cap = 8): RetrievedContext[] {
+  const byKey = new Map<string, RetrievedContext>();
+  for (const list of lists) {
+    for (const c of list) {
+      const key = `${c.sourceFile}::${c.page}::${c.text}`;
+      const existing = byKey.get(key);
+      if (!existing || c.score > existing.score) byKey.set(key, c);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, cap);
+}
+
 /** Query the Vectorize index with a query embedding and return top-k contexts. */
 export async function queryContexts(
   env: Env,

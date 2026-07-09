@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { matchesToContexts, queryContexts } from "../src/retrieval";
-import type { Env } from "../src/types";
+import { matchesToContexts, queryContexts, mergeContexts } from "../src/retrieval";
+import type { Env, RetrievedContext } from "../src/types";
 
 const matches = [
   {
@@ -26,6 +26,35 @@ describe("matchesToContexts", () => {
   it("skips matches that have no metadata text", () => {
     const partial = [{ id: "x", score: 0.9 }, ...matches];
     expect(matchesToContexts(partial as any)).toHaveLength(2);
+  });
+});
+
+describe("mergeContexts", () => {
+  const ctx = (text: string, score: number, page = 1, sourceFile = "a.pdf"): RetrievedContext => ({
+    text,
+    title: "T",
+    page,
+    sourceFile,
+    score,
+  });
+
+  it("dedupes identical chunks retrieved by different queries, keeping the best score", () => {
+    const merged = mergeContexts([
+      [ctx("same chunk", 0.5)],
+      [ctx("same chunk", 0.8), ctx("other chunk", 0.6)],
+    ]);
+    expect(merged).toHaveLength(2);
+    expect(merged[0]).toMatchObject({ text: "same chunk", score: 0.8 });
+  });
+
+  it("sorts by score descending", () => {
+    const merged = mergeContexts([[ctx("low", 0.2), ctx("high", 0.9)], [ctx("mid", 0.5, 2)]]);
+    expect(merged.map((c) => c.text)).toEqual(["high", "mid", "low"]);
+  });
+
+  it("caps the merged list", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ctx(`chunk ${i}`, i / 100, i));
+    expect(mergeContexts([many], 8)).toHaveLength(8);
   });
 });
 

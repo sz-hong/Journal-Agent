@@ -62,6 +62,15 @@ export interface Citation {
   page: number;
 }
 
+/** KV manifest value (stored as JSON) describing one ingested paper. */
+export interface PaperManifest {
+  title: string;
+  /** Traditional-Chinese auto-summary generated at ingest time ("" if none). */
+  summary: string;
+  /** Vector ids of every chunk, recorded so the paper can be deleted. */
+  chunkIds: string[];
+}
+
 /** One page of extracted PDF text. */
 export interface PdfPage {
   page: number;

@@ -29,6 +29,13 @@ describe("buildChatMessages", () => {
     expect(last.content).toContain("10"); // page number surfaced for citation
   });
 
+  it("instructs the model to answer in plain text without Markdown", () => {
+    const msgs = buildChatMessages("q", contexts);
+    const sys = msgs[0].content.toLowerCase();
+    expect(sys).toContain("plain text");
+    expect(sys).toContain("markdown");
+  });
+
   it("threads prior history between the system and the new user message", () => {
     const history: ChatMessage[] = [
       { role: "user", content: "hi" },

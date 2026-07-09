@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { embedTexts, embedQuery, chat } from "../src/openai";
+import { embedTexts, embedQuery, chat, chatStream } from "../src/openai";
 import type { Env } from "../src/types";
 
 const env = {
@@ -112,5 +112,54 @@ describe("chat", () => {
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
     expect(body.model).toBe("gpt-5.4");
     expect(body).not.toHaveProperty("temperature");
+  });
+});
+
+describe("chatStream", () => {
+  function sseResponse(lines: string[]) {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const enc = new TextEncoder();
+        for (const l of lines) controller.enqueue(enc.encode(l));
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }
+
+  it("requests stream:true and yields delta text chunks in order", async () => {
+    const fetchMock = vi.fn(async (_url?: unknown, _init?: unknown) =>
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const chunks: string[] = [];
+    for await (const t of chatStream(env, [{ role: "user", content: "q" }])) chunks.push(t);
+
+    expect(chunks).toEqual(["Hel", "lo"]);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.stream).toBe(true);
+  });
+
+  it("handles SSE events split across network chunks", async () => {
+    const full = 'data: {"choices":[{"delta":{"content":"AB"}}]}\n\n';
+    const fetchMock = vi.fn(async () => sseResponse([full.slice(0, 20), full.slice(20), "data: [DONE]\n\n"]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const chunks: string[] = [];
+    for await (const t of chatStream(env, [{ role: "user", content: "q" }])) chunks.push(t);
+    expect(chunks).toEqual(["AB"]);
+  });
+
+  it("throws on a non-OK response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 500 })));
+    const run = async () => {
+      for await (const _ of chatStream(env, [{ role: "user", content: "q" }])) void _;
+    };
+    await expect(run()).rejects.toThrow(/500|OpenAI/);
   });
 });

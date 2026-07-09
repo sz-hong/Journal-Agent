@@ -39,9 +39,15 @@ npm run ingest           # bulk-embed ../*.pdf → Vectorize + KV
 First-time setup (login, create `paper-index` Vectorize index + `PAPERS_KV`, set `OPENAI_API_KEY`) is in
 [paper-agent/README.md](paper-agent/README.md).
 
-Key layout: routes in `src/index.ts`; OpenAI wrappers in `src/openai.ts`; retrieval in `src/retrieval.ts`;
-chunking in `src/chunk.ts` (size 1000 / overlap 200); prompt in `src/prompt.ts`; PDF parsing (unpdf) in
-`src/pdf.ts`. The chat UI is `public/index.html` (served via the ASSETS binding).
+Key layout: routes in `src/index.ts` (`/chat` streams SSE by default — meta/delta/done — with
+`{stream:false}` for JSON; `DELETE /papers/:file` removes vectors by the chunk ids recorded in KV);
+query planning in `src/plan.ts` (history-aware rewrite into 1–3 standalone English queries);
+OpenAI wrappers in `src/openai.ts` (`chat`, `chatStream`); retrieval + merge in `src/retrieval.ts`;
+zh-Hant auto-summaries in `src/summary.ts`; KV manifest JSON `{title, summary, chunkIds}` parsing in
+`src/manifest.ts`; chunking in `src/chunk.ts` (size 1000 / overlap 200); prompt in `src/prompt.ts`
+(grounded + plain-text-only, no Markdown); PDF parsing (unpdf) in `src/pdf.ts`. The UI is a two-view
+SPA in `public/index.html` (`#/` home with paper cards + upload progress bar, `#/chat` streaming chat
+with localStorage history).
 
 ### Conventions
 - **Secrets**: `OPENAI_API_KEY` lives in `paper-agent/.dev.vars` (gitignored) for local dev and in a

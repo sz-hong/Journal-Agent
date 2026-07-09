@@ -7,7 +7,8 @@ Rules:
 - Cite your sources inline as (Title, p.PAGE) using the titles and page numbers given in the context.
 - If the context does not contain the answer, say you don't know / it is not covered in the indexed papers.
 - When asked to compare papers, synthesize across the different sources and attribute each point.
-- Be concise and precise.`;
+- Be concise and precise.
+- Answer in plain text only. Do NOT use Markdown formatting: no **bold**, no ## headings, no backticks, no tables, no bullet symbols. When listing, use simple numbered lines (1. 2. 3.).`;
 
 /** Render retrieved passages into a numbered, citable block. */
 function formatContexts(contexts: RetrievedContext[]): string {

@@ -4,19 +4,25 @@ A paper-reading & organizing AI agent over the facial-recognition papers, built 
 **TypeScript + Cloudflare Worker + Vectorize + OpenAI**, with a lightweight web chat UI served by the Worker.
 
 Capabilities:
-- **Q&A with citations** — ask about the indexed papers; answers are grounded in retrieved passages and cite `(Title, p.N)`.
-- **Cross-paper compare/synthesize** — ask comparative questions; the agent draws on multiple papers.
-- **Read a new paper** — upload a PDF in the UI; it's parsed, embedded, and added to the index on the fly.
+- **Q&A with citations** — ask about the indexed papers; answers are grounded in retrieved passages and cite `(Title, p.N)`, streamed token-by-token (SSE).
+- **Agentic multi-query retrieval** — each question is rewritten (using conversation history) into 1–3 standalone English search queries; results are merged and deduped, so follow-ups ("那第二篇呢?") and multi-part questions retrieve well.
+- **Conversation memory** — history is threaded into the prompt and persisted in the browser (localStorage) with a clear-chat button.
+- **Read a new paper** — upload a PDF (with a real upload progress bar); it's parsed, embedded, **auto-summarized in Traditional Chinese**, and added to the index on the fly.
+- **Delete a paper** — remove a paper's vectors + manifest from the home-page card.
 
 ## Architecture
 
 ```
-Browser (public/index.html)
-   │ fetch
+Browser (public/index.html — two-view SPA: #/ home · #/chat chat room)
+   │ fetch / SSE
 Cloudflare Worker (Hono, src/index.ts)
-   ├── POST /chat    embed query → Vectorize topK → grounded prompt → OpenAI chat → {answer, citations}
-   ├── POST /ingest  upload PDF → unpdf → chunk → OpenAI embed → Vectorize upsert → KV record
-   └── GET  /papers  list ingested papers (KV)
+   ├── POST   /chat          plan queries (history-aware) → embed×N → Vectorize → merge
+   │                         → grounded prompt → SSE: meta{citations} → delta* → done
+   │                         (body {stream:false} → single JSON {answer, citations, contexts, queries})
+   ├── POST   /ingest        upload PDF → unpdf → chunk → OpenAI embed → zh-Hant summary
+   │                         → Vectorize upsert → KV manifest {title, summary, chunkIds}
+   ├── GET    /papers        list ingested papers with summaries (KV)
+   └── DELETE /papers/:file  deleteByIds(chunkIds) + remove KV manifest
 Bindings: VECTORIZE · PAPERS_KV · ASSETS   Secret: OPENAI_API_KEY
 Models: text-embedding-3-large (truncated to 1536 dims — Vectorize max) · gpt-5.4 (wrangler.jsonc vars)
 ```
@@ -55,7 +61,7 @@ npx wrangler vectorize info paper-index   # confirm vector count (~528)
 ## Run & deploy
 
 ```powershell
-npm test        # 22 tests (vitest) — the TDD suite
+npm test        # vitest — the TDD suite
 npm run dev     # local: wrangler dev  → open the printed http://localhost:8787
 npm run deploy  # production: wrangler deploy → *.workers.dev URL
 ```
@@ -65,17 +71,20 @@ npm run deploy  # production: wrangler deploy → *.workers.dev URL
 ```
 paper-agent/
 ├── src/
-│   ├── index.ts        Hono routes (/chat, /papers, /ingest, static UI)
-│   ├── openai.ts       embed() / chat() wrappers
-│   ├── retrieval.ts    Vectorize query → contexts
-│   ├── prompt.ts       grounded, cite-or-say-unknown system prompt
+│   ├── index.ts        Hono routes (/chat SSE, /papers, /ingest, DELETE /papers/:file, static UI)
+│   ├── openai.ts       embed() / chat() / chatStream() wrappers
+│   ├── plan.ts         planQueries — history-aware query rewriting (1–3 standalone queries)
+│   ├── retrieval.ts    Vectorize query → contexts; mergeContexts (dedupe + cap)
+│   ├── prompt.ts       grounded, cite-or-say-unknown, plain-text-only system prompt
+│   ├── summary.ts      summarizePaper — zh-Hant auto-summary at ingest time
+│   ├── manifest.ts     parseManifest — KV value JSON {title, summary, chunkIds} (+ legacy fallback)
 │   ├── chunk.ts        chunkText (size 1000 / overlap 200)
 │   ├── citations.ts    dedup citations
-│   ├── ingest-core.ts  pages → chunks → vector records
+│   ├── ingest-core.ts  pages → chunks → vector records (ids = fnv1a(file)::pN::cM)
 │   ├── pdf.ts          unpdf per-page text extraction
 │   └── types.ts        Env + shared types
-├── scripts/ingest.ts   local bulk ingest
-├── public/index.html   chat UI
+├── scripts/ingest.ts   local bulk ingest (embeds + summarizes + writes KV manifests)
+├── public/index.html   two-view SPA (home: cards/upload-progress · chat: SSE streaming)
 └── test/*.test.ts      TDD suite (pure units + mocked Worker routes)
 ```
 

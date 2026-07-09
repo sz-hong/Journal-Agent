@@ -15,7 +15,8 @@ import { execSync } from "node:child_process";
 import { extractPdfPages } from "../src/pdf";
 import { buildVectorRecords } from "../src/ingest-core";
 import { embedTexts } from "../src/openai";
-import type { Env } from "../src/types";
+import { summarizePaper } from "../src/summary";
+import type { Env, PaperManifest } from "../src/types";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT = resolve(HERE, "..");
@@ -61,6 +62,7 @@ async function main() {
     OPENAI_API_KEY: apiKey,
     OPENAI_EMBED_MODEL: EMBED_MODEL,
     OPENAI_EMBED_DIMENSIONS: EMBED_DIMENSIONS,
+    OPENAI_CHAT_MODEL: process.env.OPENAI_CHAT_MODEL || readDevVars().OPENAI_CHAT_MODEL || "gpt-5.4",
   } as unknown as Env;
 
   const pdfs = readdirSync(PAPERS_DIR).filter((f) => f.toLowerCase().endsWith(".pdf"));
@@ -82,9 +84,11 @@ async function main() {
       { sourceFile: file, title },
       (texts) => embedTexts(env, texts),
     );
+    const summary = await summarizePaper(env, title, pages.slice(0, 3));
+    const manifest: PaperManifest = { title, summary, chunkIds: records.map((r) => r.id) };
     for (const r of records) ndjsonLines.push(JSON.stringify(r));
-    kvEntries.push({ key: file, value: title, metadata: { title } });
-    console.log(`  ${title}: ${records.length} chunks`);
+    kvEntries.push({ key: file, value: JSON.stringify(manifest), metadata: { title } });
+    console.log(`  ${title}: ${records.length} chunks, summary ${summary ? "OK" : "SKIPPED"}`);
   }
 
   writeFileSync(VECTORS_FILE, ndjsonLines.join("\n") + "\n", "utf8");
