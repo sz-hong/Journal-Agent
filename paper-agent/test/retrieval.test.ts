@@ -59,17 +59,18 @@ describe("mergeContexts", () => {
 });
 
 describe("queryContexts", () => {
-  it("queries the Vectorize binding with topK + metadata and maps the result", async () => {
+  it("queries the Vectorize binding with topK + metadata + session filter and maps the result", async () => {
     const query = vi.fn(async (_vec?: unknown, _opts?: unknown) => ({ count: matches.length, matches }));
     const env = { VECTORIZE: { query } } as unknown as Env;
 
-    const out = await queryContexts(env, [0.1, 0.2, 0.3], 5);
+    const out = await queryContexts(env, [0.1, 0.2, 0.3], 5, "sess-a");
 
     expect(query).toHaveBeenCalledTimes(1);
     const [vec, opts] = query.mock.calls[0];
     expect(vec).toEqual([0.1, 0.2, 0.3]);
     expect((opts as any).topK).toBe(5);
     expect((opts as any).returnMetadata).toBeTruthy();
+    expect((opts as any).filter).toEqual({ session_id: "sess-a" });
     expect(out).toHaveLength(2);
     expect(out[0].title).toBe("Lynch (2024)");
   });

@@ -4,27 +4,31 @@ A paper-reading & organizing AI agent over the facial-recognition papers, built 
 **TypeScript + Cloudflare Worker + Vectorize + OpenAI**, with a lightweight web chat UI served by the Worker.
 
 Capabilities:
-- **Q&A with citations** — ask about the indexed papers; answers are grounded in retrieved passages and cite `(Title, p.N)`, streamed token-by-token (SSE).
-- **Agentic multi-query retrieval** — each question is rewritten (using conversation history) into 1–3 standalone English search queries; results are merged and deduped, so follow-ups ("那第二篇呢?") and multi-part questions retrieve well.
-- **Conversation memory** — history is threaded into the prompt and persisted in the browser (localStorage) with a clear-chat button.
-- **Read a new paper** — upload a PDF (with a real upload progress bar); it's parsed, embedded, **auto-summarized in Traditional Chinese**, and added to the index on the fly.
-- **Delete a paper** — remove a paper's vectors + manifest from the home-page card.
+- **Sessions** — every workspace is an isolated session (`#/s/{sid}`, shareable URL): its own papers, its own chats. A new session starts empty; papers are user-uploaded. Sessions can be deleted wholesale.
+- **Multiple chat rooms per session** — chats live in server KV (cross-device); titles auto-set from the first question.
+- **Q&A with citations** — answers are grounded in retrieved passages and cite `(Title, p.N)`, streamed token-by-token (SSE).
+- **Agentic multi-query retrieval** — each question is rewritten (using server-side chat history) into 1–3 standalone English search queries; retrieval is session-filtered, merged, deduped.
+- **Read a new paper** — upload a PDF (real upload progress bar); parsed, embedded, **auto-summarized in Traditional Chinese**.
+- **Delete** — per paper, per chat room, or the whole session (vectors + KV).
 
 ## Architecture
 
 ```
-Browser (public/index.html — two-view SPA: #/ home · #/chat chat room)
+Browser (public/index.html — 3-view SPA: #/ entry · #/s/{sid} session home · #/s/{sid}/c/{chatId} chat)
    │ fetch / SSE
-Cloudflare Worker (Hono, src/index.ts)
-   ├── POST   /chat          plan queries (history-aware) → embed×N → Vectorize → merge
-   │                         → grounded prompt → SSE: meta{citations} → delta* → done
-   │                         (body {stream:false} → single JSON {answer, citations, contexts, queries})
-   ├── POST   /ingest        upload PDF → unpdf → chunk → OpenAI embed → zh-Hant summary
-   │                         → Vectorize upsert → KV manifest {title, summary, chunkIds}
-   ├── GET    /papers        list ingested papers with summaries (KV)
-   └── DELETE /papers/:file  deleteByIds(chunkIds) + remove KV manifest
+Cloudflare Worker (Hono, src/index.ts) — all routes session-scoped under /s/:sid
+   ├── POST   /s/:sid/chat            {chatId, message} → history from KV → plan queries →
+   │                                  embed×N → Vectorize (filter session_id) → merge →
+   │                                  SSE meta{citations} → delta* → done; turn persisted to KV
+   ├── GET    /s/:sid/chats           list chat rooms   POST /s/:sid/chats  create (client uuid)
+   ├── GET    /s/:sid/chats/:chatId   full messages     DELETE …/chats/:chatId  remove
+   ├── POST   /s/:sid/ingest          upload PDF → chunk → embed → zh-Hant summary →
+   │                                  upsert (session-scoped ids) → KV s:{sid}:paper:{file}
+   ├── GET    /s/:sid/papers          list papers+summaries   DELETE …/papers/:file  remove
+   └── DELETE /s/:sid                 wipe the whole session (vectors + KV keys)
 Bindings: VECTORIZE · PAPERS_KV · ASSETS   Secret: OPENAI_API_KEY
 Models: text-embedding-3-large (truncated to 1536 dims — Vectorize max) · gpt-5.4 (wrangler.jsonc vars)
+KV keys: s:{sid}:paper:{file} → {title, summary, chunkIds} · s:{sid}:chat:{chatId} → {title, timestamps, messages}
 ```
 
 Only OpenAI calls are billed (embeddings + generation). Cloudflare Vectorize/KV/Workers have free-tier allowances.
@@ -42,6 +46,8 @@ npx wrangler login
 #    1536 is Vectorize's max dimension; text-embedding-3-large (native 3072)
 #    is truncated to 1536 via the OpenAI `dimensions` parameter.
 npx wrangler vectorize create paper-index --dimensions=1536 --metric=cosine
+#    Session isolation relies on a metadata index — create it BEFORE inserting vectors:
+npx wrangler vectorize create-metadata-index paper-index --property-name=session_id --type=string
 npx wrangler kv namespace create PAPERS_KV
 #    → copy the printed `id` into wrangler.jsonc (kv_namespaces[0].id)
 
@@ -50,12 +56,13 @@ npx wrangler kv namespace create PAPERS_KV
 #    production: npx wrangler secret put OPENAI_API_KEY
 ```
 
-## Ingest the 6 papers
+## Bulk-ingest local PDFs into a session
 
 ```powershell
-npm run ingest          # embeds ../*.pdf, then inserts into Vectorize + KV
-# or: npm run ingest -- --no-run   # only writes data/ files, prints the wrangler commands
-npx wrangler vectorize info paper-index   # confirm vector count (~528)
+# Create a session in the web UI (or generate a uuid), copy its id, then:
+npm run ingest -- --session <sid>    # embeds ../*.pdf into that session
+# or add --no-run to only write data/ files and print the wrangler commands
+npx wrangler vectorize info paper-index   # confirm vector count
 ```
 
 ## Run & deploy
@@ -71,20 +78,21 @@ npm run deploy  # production: wrangler deploy → *.workers.dev URL
 ```
 paper-agent/
 ├── src/
-│   ├── index.ts        Hono routes (/chat SSE, /papers, /ingest, DELETE /papers/:file, static UI)
+│   ├── index.ts        Hono session-scoped routes (/s/:sid/…: chat SSE, chats CRUD, papers, ingest, session wipe)
+│   ├── chats.ts        KV chat store (newChat / loadChat / appendMessages / listChats)
 │   ├── openai.ts       embed() / chat() / chatStream() wrappers
 │   ├── plan.ts         planQueries — history-aware query rewriting (1–3 standalone queries)
-│   ├── retrieval.ts    Vectorize query → contexts; mergeContexts (dedupe + cap)
+│   ├── retrieval.ts    Vectorize query (session_id filter) → contexts; mergeContexts (dedupe + cap)
 │   ├── prompt.ts       grounded, cite-or-say-unknown, plain-text-only system prompt
 │   ├── summary.ts      summarizePaper — zh-Hant auto-summary at ingest time
-│   ├── manifest.ts     parseManifest — KV value JSON {title, summary, chunkIds} (+ legacy fallback)
+│   ├── manifest.ts     parseManifest — KV value JSON {title, summary, chunkIds}
 │   ├── chunk.ts        chunkText (size 1000 / overlap 200)
 │   ├── citations.ts    dedup citations
-│   ├── ingest-core.ts  pages → chunks → vector records (ids = fnv1a(file)::pN::cM)
+│   ├── ingest-core.ts  pages → chunks → vector records (ids = fnv1a(sid::file)::pN::cM, session_id metadata)
 │   ├── pdf.ts          unpdf per-page text extraction
 │   └── types.ts        Env + shared types
-├── scripts/ingest.ts   local bulk ingest (embeds + summarizes + writes KV manifests)
-├── public/index.html   two-view SPA (home: cards/upload-progress · chat: SSE streaming)
+├── scripts/ingest.ts   local bulk ingest into a session (--session <sid>)
+├── public/index.html   3-view SPA (entry · session home · chat room)
 └── test/*.test.ts      TDD suite (pure units + mocked Worker routes)
 ```
 

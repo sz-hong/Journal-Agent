@@ -38,6 +38,8 @@ export interface ChunkMetadata {
   page: number;
   /** Original PDF file name. */
   source_file: string;
+  /** Owning session — retrieval filters on this (metadata index required). */
+  session_id: string;
 }
 
 /** A vector ready to upsert into Vectorize. */
@@ -69,6 +71,21 @@ export interface PaperManifest {
   summary: string;
   /** Vector ids of every chunk, recorded so the paper can be deleted. */
   chunkIds: string[];
+}
+
+/** One message stored in a chat record (citations kept for UI restore only). */
+export interface StoredChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  citations?: Citation[];
+}
+
+/** KV chat record (key s:{sid}:chat:{chatId}, stored as JSON). */
+export interface ChatRecord {
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: StoredChatMessage[];
 }
 
 /** One page of extracted PDF text. */

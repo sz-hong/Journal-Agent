@@ -1,9 +1,11 @@
 /**
- * Local bulk ingest: embed the project's PDFs and load them into Vectorize + KV.
+ * Local bulk ingest: embed the project's PDFs and load them into Vectorize + KV,
+ * scoped to one session.
  *
- *   npm run ingest            # embed all ../*.pdf, write NDJSON, then wrangler insert
- *   npm run ingest -- --no-run  # only write data/ files, skip wrangler commands
+ *   npm run ingest -- --session <sid>            # embed all ../*.pdf into session <sid>
+ *   npm run ingest -- --session <sid> --no-run   # only write data/ files, skip wrangler
  *
+ * Create a session in the web UI first (or generate a uuid) and pass its id.
  * Requires OPENAI_API_KEY (from paper-agent/.dev.vars or the environment) and,
  * for the insert step, a created Vectorize index + KV namespace and wrangler auth.
  */
@@ -53,6 +55,12 @@ function readDevVars(): Record<string, string> {
 
 async function main() {
   const noRun = process.argv.includes("--no-run");
+  const sessionArg = process.argv.indexOf("--session");
+  const sessionId = sessionArg >= 0 ? process.argv[sessionArg + 1] : undefined;
+  if (!sessionId || !/^[A-Za-z0-9-]{8,64}$/.test(sessionId)) {
+    console.error("Usage: npm run ingest -- --session <sid>   (create a session in the UI first)");
+    process.exit(1);
+  }
   const apiKey = process.env.OPENAI_API_KEY || readDevVars().OPENAI_API_KEY;
   if (!apiKey) {
     console.error("Missing OPENAI_API_KEY (set it in paper-agent/.dev.vars or the environment).");
@@ -81,13 +89,17 @@ async function main() {
     const pages = await extractPdfPages(bytes);
     const records = await buildVectorRecords(
       pages,
-      { sourceFile: file, title },
+      { sourceFile: file, title, sessionId },
       (texts) => embedTexts(env, texts),
     );
     const summary = await summarizePaper(env, title, pages.slice(0, 3));
     const manifest: PaperManifest = { title, summary, chunkIds: records.map((r) => r.id) };
     for (const r of records) ndjsonLines.push(JSON.stringify(r));
-    kvEntries.push({ key: file, value: JSON.stringify(manifest), metadata: { title } });
+    kvEntries.push({
+      key: `s:${sessionId}:paper:${file}`,
+      value: JSON.stringify(manifest),
+      metadata: { title },
+    });
     console.log(`  ${title}: ${records.length} chunks, summary ${summary ? "OK" : "SKIPPED"}`);
   }
 

@@ -34,15 +34,20 @@ export function mergeContexts(lists: RetrievedContext[][], cap = 8): RetrievedCo
   return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, cap);
 }
 
-/** Query the Vectorize index with a query embedding and return top-k contexts. */
+/**
+ * Query the Vectorize index with a query embedding, scoped to one session via
+ * the session_id metadata filter, and return top-k contexts.
+ */
 export async function queryContexts(
   env: Env,
   queryVector: number[],
   k: number,
+  sessionId: string,
 ): Promise<RetrievedContext[]> {
   const result = await env.VECTORIZE.query(queryVector, {
     topK: k,
     returnMetadata: true,
+    filter: { session_id: sessionId },
   });
   return matchesToContexts(result.matches ?? []);
 }

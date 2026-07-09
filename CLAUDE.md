@@ -39,15 +39,19 @@ npm run ingest           # bulk-embed ../*.pdf → Vectorize + KV
 First-time setup (login, create `paper-index` Vectorize index + `PAPERS_KV`, set `OPENAI_API_KEY`) is in
 [paper-agent/README.md](paper-agent/README.md).
 
-Key layout: routes in `src/index.ts` (`/chat` streams SSE by default — meta/delta/done — with
-`{stream:false}` for JSON; `DELETE /papers/:file` removes vectors by the chunk ids recorded in KV);
-query planning in `src/plan.ts` (history-aware rewrite into 1–3 standalone English queries);
-OpenAI wrappers in `src/openai.ts` (`chat`, `chatStream`); retrieval + merge in `src/retrieval.ts`;
-zh-Hant auto-summaries in `src/summary.ts`; KV manifest JSON `{title, summary, chunkIds}` parsing in
-`src/manifest.ts`; chunking in `src/chunk.ts` (size 1000 / overlap 200); prompt in `src/prompt.ts`
-(grounded + plain-text-only, no Markdown); PDF parsing (unpdf) in `src/pdf.ts`. The UI is a two-view
-SPA in `public/index.html` (`#/` home with paper cards + upload progress bar, `#/chat` streaming chat
-with localStorage history).
+Key layout: **everything is session-scoped** — routes live under `/s/:sid/…` in `src/index.ts`
+(chat SSE meta/delta/done with `{stream:false}` JSON fallback; chats CRUD; papers list/ingest/delete;
+`DELETE /s/:sid` wipes a whole session). Chat history is **server-side** in KV
+(`src/chats.ts`: key `s:{sid}:chat:{chatId}`); paper manifests at `s:{sid}:paper:{file}`
+(`src/manifest.ts`). Retrieval filters Vectorize by `session_id` metadata (`src/retrieval.ts`) —
+the index needs a `session_id` metadata index created **before** any inserts. Vector ids hash
+`sid::filename` (`src/ingest-core.ts`) so same-named files in different sessions never collide.
+Query planning in `src/plan.ts`; OpenAI wrappers (`chat`, `chatStream`) in `src/openai.ts`;
+zh-Hant auto-summaries in `src/summary.ts`; prompt (grounded + plain-text-only) in `src/prompt.ts`;
+chunking in `src/chunk.ts` (1000/200); PDF parsing (unpdf) in `src/pdf.ts`. The UI is a 3-view SPA in
+`public/index.html`: `#/` entry (create/join sessions; known sessions in localStorage),
+`#/s/{sid}` session home (papers + chat rooms + upload progress bar), `#/s/{sid}/c/{chatId}` chat.
+Bulk ingest: `npm run ingest -- --session <sid>`.
 
 ### Conventions
 - **Secrets**: `OPENAI_API_KEY` lives in `paper-agent/.dev.vars` (gitignored) for local dev and in a

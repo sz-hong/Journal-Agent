@@ -4,6 +4,8 @@ import type { PdfPage, VectorRecord, ChunkMetadata } from "./types";
 export interface PaperMeta {
   sourceFile: string;
   title: string;
+  /** Owning session; scopes both vector ids and chunk metadata. */
+  sessionId: string;
 }
 
 export interface ChunkEntry {
@@ -33,12 +35,20 @@ export function chunksFromPages(
   opts?: ChunkOptions,
 ): ChunkEntry[] {
   const entries: ChunkEntry[] = [];
+  // Hash covers session + file so the same file name in two sessions never collides.
+  const fileId = shortFileId(`${meta.sessionId}::${meta.sourceFile}`);
   for (const p of pages) {
     chunkText(p.text, opts).forEach((text, i) => {
       entries.push({
-        id: `${shortFileId(meta.sourceFile)}::p${p.page}::c${i}`,
+        id: `${fileId}::p${p.page}::c${i}`,
         text,
-        metadata: { text, title: meta.title, page: p.page, source_file: meta.sourceFile },
+        metadata: {
+          text,
+          title: meta.title,
+          page: p.page,
+          source_file: meta.sourceFile,
+          session_id: meta.sessionId,
+        },
       });
     });
   }
