@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "paper-agent",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "OPENAI_CHAT_MODEL": "gpt-4o-mini",
+    "OPENAI_EMBED_MODEL": "text-embedding-3-small"
+  },
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "paper-index"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "PAPERS_KV",
+      "id": "PLACEHOLDER_REPLACE_AFTER_kv_namespace_create"
+    }
+  ]
+  // Secret (do NOT put here): OPENAI_API_KEY
+  //   - local:  paper-agent/.dev.vars  ->  OPENAI_API_KEY=sk-...
+  //   - prod:   wrangler secret put OPENAI_API_KEY
+}

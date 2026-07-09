@@ -1,0 +1,7 @@
+node_modules/
+.dev.vars
+.wrangler/
+dist/
+data/vectors.ndjson
+*.log
+.DS_Store
