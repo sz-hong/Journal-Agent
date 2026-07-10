@@ -289,18 +289,30 @@ app.post("/s/:sid/ingest", async (c) => {
     return c.json({ error: "no extractable text in PDF" }, 422);
   }
 
-  // Structured card over the full paper; falls back to the shallow summary
-  // when card generation fails (both are best-effort).
-  const card = await generatePaperCard(c.env, title, pages);
-  const summary = card?.overview ?? (await summarizePaper(c.env, title, pages.slice(0, 3)));
-
   await c.env.VECTORIZE.upsert(records as unknown as VectorizeVector[]);
-  const manifest = { title, summary, chunkIds: records.map((r) => r.id), ...(card ? { card } : {}) };
-  await c.env.PAPERS_KV.put(paperKey(sid, file.name), JSON.stringify(manifest), {
-    metadata: { title },
-  });
+  const manifest = { title, summary: "", chunkIds: records.map((r) => r.id) };
+  const key = paperKey(sid, file.name);
+  await c.env.PAPERS_KV.put(key, JSON.stringify(manifest), { metadata: { title } });
 
-  return c.json({ added: records.length, title, file: file.name, summary, ...(card ? { card } : {}) });
+  // The structured card is map-reduce over the whole paper (up to 9 LLM
+  // calls) — far too slow to block the upload response on. Generate it in
+  // the background and patch the manifest when it lands.
+  const env = c.env;
+  c.executionCtx.waitUntil(
+    (async () => {
+      const card = await generatePaperCard(env, title, pages);
+      const summary = card?.overview ?? (await summarizePaper(env, title, pages.slice(0, 3)));
+      // The paper may have been deleted while we were generating — don't resurrect it.
+      if ((await env.PAPERS_KV.get(key)) == null) return;
+      await env.PAPERS_KV.put(
+        key,
+        JSON.stringify({ ...manifest, summary, ...(card ? { card } : {}) }),
+        { metadata: { title } },
+      );
+    })(),
+  );
+
+  return c.json({ added: records.length, title, file: file.name, summary: "", cardPending: true });
 });
 
 /** Delete one paper from this session (vectors + manifest). */

@@ -427,32 +427,49 @@ describe("GET /s/:sid/papers", () => {
 });
 
 describe("POST /s/:sid/ingest", () => {
-  it("scopes vectors and the KV manifest to the session, storing the paper card", async () => {
+  /** ctx that tracks waitUntil promises so tests can await background work. */
+  function makeCtx() {
+    const tasks: Promise<unknown>[] = [];
+    return {
+      tasks,
+      waitUntil(p: Promise<unknown>) {
+        tasks.push(p);
+      },
+      passThroughOnException() {},
+    } as unknown as ExecutionContext & { tasks: Promise<unknown>[] };
+  }
+
+  it("responds fast (no card/summary yet), then patches the manifest in the background", async () => {
     installOpenAiMock();
     (extractPdfPages as any).mockResolvedValue([{ page: 1, text: "x".repeat(300) }]);
     const env = makeEnv();
+    const ingestCtx = makeCtx();
 
     const form = new FormData();
     form.append("file", new File([new Uint8Array([1, 2, 3])], "newpaper.pdf", { type: "application/pdf" }));
     const res = await app.fetch(
       new Request(`http://x/s/${SID}/ingest`, { method: "POST", headers: AUTH, body: form }),
       env,
-      ctx,
+      ingestCtx,
     );
 
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    // the summary blurb comes from the structured card's overview
-    expect(data.summary).toBe(CARD_FIXTURE.overview);
-    expect(data.card.what).toBe(CARD_FIXTURE.what);
+    // the response returns before card/summary generation
+    expect(data.summary).toBe("");
+    expect(data.cardPending).toBe(true);
 
     const upserted = (env.VECTORIZE.upsert as any).mock.calls[0][0];
     expect(upserted[0].metadata.session_id).toBe(SID);
 
-    const stored = env.KV.store.get(paperKey(SID, "newpaper.pdf"));
-    expect(stored).toBeTruthy();
-    const manifest = JSON.parse(stored!.value);
+    // card/summary generation was handed to waitUntil, not awaited in-request
+    // (the response above carries no summary/card — that alone proves it),
+    // and the background task patches the manifest with both.
+    expect(ingestCtx.tasks.length).toBe(1);
+    await Promise.all(ingestCtx.tasks);
+    const manifest = JSON.parse(env.KV.store.get(paperKey(SID, "newpaper.pdf"))!.value);
     expect(manifest.chunkIds).toHaveLength(data.added);
+    expect(manifest.summary).toBe(CARD_FIXTURE.overview);
     expect(manifest.card.why).toBe(CARD_FIXTURE.why);
   });
 
@@ -460,21 +477,41 @@ describe("POST /s/:sid/ingest", () => {
     installOpenAiMock({ card: "這不是 JSON", summary: "自動摘要。" });
     (extractPdfPages as any).mockResolvedValue([{ page: 1, text: "x".repeat(300) }]);
     const env = makeEnv();
+    const ingestCtx = makeCtx();
 
     const form = new FormData();
     form.append("file", new File([new Uint8Array([1, 2, 3])], "newpaper.pdf", { type: "application/pdf" }));
     const res = await app.fetch(
       new Request(`http://x/s/${SID}/ingest`, { method: "POST", headers: AUTH, body: form }),
       env,
-      ctx,
+      ingestCtx,
     );
 
     expect(res.status).toBe(200);
-    const data = (await res.json()) as any;
-    expect(data.summary).toBe("自動摘要。");
-    expect(data.card).toBeUndefined();
+    await Promise.all(ingestCtx.tasks);
     const manifest = JSON.parse(env.KV.store.get(paperKey(SID, "newpaper.pdf"))!.value);
+    expect(manifest.summary).toBe("自動摘要。");
     expect(manifest.card).toBeUndefined();
+  });
+
+  it("does not resurrect a paper deleted while the card was generating", async () => {
+    installOpenAiMock();
+    (extractPdfPages as any).mockResolvedValue([{ page: 1, text: "x".repeat(300) }]);
+    const env = makeEnv();
+    const ingestCtx = makeCtx();
+
+    const form = new FormData();
+    form.append("file", new File([new Uint8Array([1, 2, 3])], "newpaper.pdf", { type: "application/pdf" }));
+    await app.fetch(
+      new Request(`http://x/s/${SID}/ingest`, { method: "POST", headers: AUTH, body: form }),
+      env,
+      ingestCtx,
+    );
+
+    // delete the paper before the background task completes
+    env.KV.store.delete(paperKey(SID, "newpaper.pdf"));
+    await Promise.all(ingestCtx.tasks);
+    expect(env.KV.store.has(paperKey(SID, "newpaper.pdf"))).toBe(false);
   });
 });
 

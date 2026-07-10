@@ -1306,6 +1306,15 @@
       }
       $("newChatBtn").addEventListener("click", newChat);
 
+      // 摘要與卡片改為上傳後於伺服器背景生成：先顯示「摘要生成中」，
+      // 並排程幾次重新整理把生成完的摘要帶回來。
+      const pendingSummary = new Set();
+      function scheduleSummaryRefresh(sid) {
+        for (const delay of [20000, 45000, 90000, 180000]) {
+          setTimeout(() => { if (SID === sid && !CHAT_ID) loadPapers(); }, delay);
+        }
+      }
+
       // KV 的 list 是最終一致：剛刪除的論文可能還會在清單中殘留最多約一分鐘，
       // 記下刪除動作、渲染時過濾，避免刪除後卡片又被畫回來。
       const deletedPapers = new Map(); // `${sid}:${file}` -> 刪除時間
@@ -1322,6 +1331,7 @@
         try {
           const res = await authFetch(`/s/${SID}/papers`);
           const papers = ((await res.json()).papers || []).filter((p) => !isPaperDeleted(SID, p.file));
+          for (const p of papers) if (p.summary) pendingSummary.delete(p.file);
           cacheCounts(SID, { papers: papers.length });
           $("paperCount").textContent = `${papers.length} 篇`;
           renderSidebar();
@@ -1344,7 +1354,7 @@
                 <button class="del" title="從論文庫刪除">✕</button>
               </div>
               <div class="ttl">${esc(p.title)}</div>
-              <div class="sum">${esc(p.summary || "（尚無摘要）")}</div>
+              <div class="sum">${esc(p.summary || (pendingSummary.has(p.file) ? "（AI 正在生成摘要，稍後自動更新…）" : "（尚無摘要）"))}</div>
             </div>`
             )
             .join("")}</div>`;
@@ -1390,7 +1400,7 @@
           .map((u) => {
             const statusLabel =
               u.status === "error" ? `上傳失敗：${esc(u.errMsg || "無法解析")}`
-              : u.status === "done" ? "已完成 · 摘要已加入論文庫"
+              : u.status === "done" ? "已完成 · 摘要於背景生成中，稍後自動更新"
               : u.status === "processing" ? "解析與嵌入中…（生成摘要需要一點時間）"
               : u.status === "up" ? `${fmtSize(u.file.size)} · 上傳中…`
               : `${fmtSize(u.file.size)} · 等待中`;
@@ -1467,6 +1477,10 @@
               const data = JSON.parse(xhr.responseText);
               if (xhr.status !== 200) throw new Error(data.error || "ingest failed");
               item.status = "done";
+              if (data.cardPending) {
+                pendingSummary.add(data.file);
+                scheduleSummaryRefresh(SID);
+              }
               renderUploads();
               loadPapers();
               setTimeout(() => { item.fading = true; renderUploads(); }, 1500);
