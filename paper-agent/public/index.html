@@ -3,256 +3,785 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Paper Reading Agent</title>
+    <title>析讀 AI — 論文閱讀助手</title>
     <style>
-      :root {
-        --bg: #f6f7fb;
-        --panel: #ffffff;
-        --ink: #17181c;
-        --muted: #6b7280;
-        --border: #e6e8ef;
-        --accent: #4f46e5;
-        --accent-soft: #eef0ff;
-        --accent-ink: #ffffff;
-        --user: #eef0ff;
-        --cite: #f2f4f8;
-        --danger: #dc2626;
-        --ok: #059669;
-        --shadow: 0 1px 3px rgba(16, 18, 25, 0.06), 0 8px 24px rgba(16, 18, 25, 0.05);
+      :root{
+        --bg:#f5f5f8; --panel:#ffffff; --panel2:#eeeef3; --text:#1c1c24; --text2:#5b5b6b; --text3:#8f8fa0;
+        --border:#e5e5ec; --border2:#d8d8e2;
+        --primary:#4f46e5; --primary-strong:#4338ca; --accent:#4f46e5; --on-primary:#ffffff;
+        --primary-soft:rgba(79,70,229,.08); --primary-soft2:rgba(79,70,229,.14); --primary-border:rgba(79,70,229,.30);
+        --danger:#dc2626; --danger-soft:rgba(220,38,38,.08); --ok:#16a34a; --ok-soft:rgba(22,163,74,.10);
+        --shadow:0 1px 3px rgba(24,24,48,.07); --shadow-lg:0 12px 32px rgba(24,24,48,.14);
       }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0e1015;
-          --panel: #171a22;
-          --ink: #e9eaee;
-          --muted: #9aa1ad;
-          --border: #272c38;
-          --accent: #6d67f0;
-          --accent-soft: #232748;
-          --accent-ink: #ffffff;
-          --user: #222642;
-          --cite: #1d212b;
-          --danger: #f87171;
-          --ok: #34d399;
-          --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+      @media (prefers-color-scheme: dark){
+        :root:not([data-force="light"]){
+          --bg:#131318; --panel:#1c1c24; --panel2:#26262f; --text:#ededf3; --text2:#a6a6b7; --text3:#737384;
+          --border:#2b2b37; --border2:#3a3a48;
+          --primary:#5b54ec; --primary-strong:#6d67f0; --accent:#8f8bf5; --on-primary:#ffffff;
+          --primary-soft:rgba(129,124,248,.13); --primary-soft2:rgba(129,124,248,.20); --primary-border:rgba(129,124,248,.38);
+          --danger:#f87171; --danger-soft:rgba(248,113,113,.12); --ok:#4ade80; --ok-soft:rgba(74,222,128,.12);
+          --shadow:0 1px 3px rgba(0,0,0,.35); --shadow-lg:0 16px 40px rgba(0,0,0,.55);
         }
       }
-      * { box-sizing: border-box; }
-      html, body { height: 100%; }
-      body {
-        margin: 0;
-        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
-        background: var(--bg);
-        color: var(--ink);
+      :root[data-force="dark"]{
+        --bg:#131318; --panel:#1c1c24; --panel2:#26262f; --text:#ededf3; --text2:#a6a6b7; --text3:#737384;
+        --border:#2b2b37; --border2:#3a3a48;
+        --primary:#5b54ec; --primary-strong:#6d67f0; --accent:#8f8bf5; --on-primary:#ffffff;
+        --primary-soft:rgba(129,124,248,.13); --primary-soft2:rgba(129,124,248,.20); --primary-border:rgba(129,124,248,.38);
+        --danger:#f87171; --danger-soft:rgba(248,113,113,.12); --ok:#4ade80; --ok-soft:rgba(74,222,128,.12);
+        --shadow:0 1px 3px rgba(0,0,0,.35); --shadow-lg:0 16px 40px rgba(0,0,0,.55);
       }
-      .view { display: none; min-height: 100vh; }
-      .view.active { display: flex; flex-direction: column; }
-      .wrap { max-width: 980px; width: 100%; margin: 0 auto; padding: 40px 24px 80px; }
-      .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 36px 0 14px; }
-      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
-      .btn {
-        display: inline-block; font: inherit; font-size: 14.5px; font-weight: 700; text-decoration: none; text-align: center;
-        background: var(--accent); color: var(--accent-ink); border: none; border-radius: 11px;
-        padding: 11px 24px; cursor: pointer; box-shadow: var(--shadow); transition: transform .12s ease, opacity .12s ease;
+      *{box-sizing:border-box}
+      html,body{margin:0;height:100%;background:var(--bg)}
+      body{
+        color:var(--text);font-size:14px;-webkit-font-smoothing:antialiased;
+        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Noto Sans TC','Microsoft JhengHei',sans-serif;
       }
-      .btn:hover { transform: translateY(-1px); opacity: .93; }
-      .btn.ghost { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); box-shadow: none; }
-      .btn.danger { background: transparent; color: var(--danger); border: 1.5px solid var(--danger); box-shadow: none; }
-      .btn.small { font-size: 13px; padding: 7px 14px; border-radius: 9px; }
+      a{color:var(--accent);text-decoration:none}
+      a:hover{color:var(--primary-strong);text-decoration:underline}
+      button,input,select,textarea{font-family:inherit}
+      @keyframes dotPulse{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+      @keyframes blinkCursor{0%,100%{opacity:1}50%{opacity:0}}
 
-      /* ============ 入口頁 ============ */
-      .hero { text-align: center; padding: 46px 0 30px; }
-      .hero .logo { font-size: 46px; }
-      .hero h1 { font-size: 32px; margin: 12px 0 10px; letter-spacing: -0.02em; }
-      .hero p { color: var(--muted); font-size: 16px; margin: 0 0 28px; line-height: 1.7; }
-      .session-item {
-        display: flex; align-items: center; gap: 12px; padding: 13px 16px; margin-bottom: 8px;
-        background: var(--panel); border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
+      #app{display:flex;height:100vh;overflow:hidden}
+      main{flex:1;display:flex;flex-direction:column;min-width:0}
+      .view{display:none}
+      .view.active{display:flex;flex-direction:column;flex:1;min-height:0}
+
+      /* ---------- 通用元件 ---------- */
+      .input{
+        border:1px solid var(--border);outline:none;background:var(--bg);color:var(--text);
+        padding:11px 14px;border-radius:10px;font-size:14px;width:100%;
       }
-      .session-item:hover { border-color: var(--accent); }
-      .session-item .name { flex: 1; font-size: 14px; font-weight: 600; }
-      .session-item .sid { font-size: 11.5px; color: var(--muted); font-family: ui-monospace, monospace; }
-      .session-item .forget { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 4px; }
-      .session-item .forget:hover { color: var(--danger); }
-      .join-row { display: flex; gap: 10px; margin-top: 10px; }
-      .join-row input {
-        flex: 1; font: inherit; font-size: 13.5px; padding: 10px 13px; border: 1px solid var(--border);
-        border-radius: 10px; background: var(--panel); color: var(--ink);
+      .input:focus{border-color:var(--primary-border)}
+      select.input{cursor:pointer;padding:11px 12px}
+      .btn-primary{
+        border:none;background:var(--primary);color:var(--on-primary);font-size:14px;font-weight:650;
+        padding:12px;border-radius:10px;cursor:pointer;white-space:nowrap;
+      }
+      .btn-primary:hover{background:var(--primary-strong)}
+      .btn-outline{
+        border:1px solid var(--primary-border);background:transparent;color:var(--accent);font-size:14px;
+        font-weight:650;padding:12px;border-radius:10px;cursor:pointer;white-space:nowrap;
+      }
+      .btn-outline:hover{background:var(--primary-soft)}
+      .btn-plain{
+        border:1px solid var(--border);background:transparent;color:var(--text2);font-size:14px;font-weight:650;
+        padding:12px 18px;border-radius:10px;cursor:pointer;white-space:nowrap;
+      }
+      .btn-plain:hover{background:var(--panel2)}
+      .btn-soft{
+        border:none;background:var(--primary-soft);color:var(--accent);font-size:12.5px;font-weight:650;
+        padding:7px 14px;border-radius:8px;cursor:pointer;white-space:nowrap;
+      }
+      .btn-soft:hover{background:var(--primary-soft2)}
+      .btn-danger-ghost{
+        border:1px solid var(--danger);background:transparent;color:var(--danger);font-size:13px;font-weight:650;
+        padding:9px 16px;border-radius:9px;cursor:pointer;white-space:nowrap;
+      }
+      .btn-danger-ghost:hover{background:var(--danger-soft)}
+      .icon-btn{
+        flex:none;width:28px;height:28px;border:1px solid var(--border);background:transparent;color:var(--text3);
+        border-radius:8px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0;
+      }
+      .icon-btn:hover{color:var(--accent);border-color:var(--primary-border)}
+      .err-box{font-size:12.5px;color:var(--danger);background:var(--danger-soft);border-radius:9px;padding:9px 12px}
+      .field{display:flex;flex-direction:column;gap:6px}
+      .field label{font-size:12.5px;font-weight:650;color:var(--text2)}
+      .auth-card{
+        background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:26px 24px;
+        box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px;
       }
 
-      /* ============ Session 主頁 ============ */
-      .top-bar {
-        display: flex; align-items: center; gap: 12px; padding: 12px 18px;
-        background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap;
+      /* ---------- 側邊欄 ---------- */
+      aside{
+        width:264px;flex:none;display:flex;flex-direction:column;background:var(--panel);
+        border-right:1px solid var(--border);transition:width .18s ease;overflow:hidden;
       }
-      .top-bar .back { text-decoration: none; color: var(--accent); font-size: 14px; font-weight: 600; white-space: nowrap; }
-      .top-bar .title { font-size: 15px; font-weight: 700; flex: 1; min-width: 120px; }
-      .top-bar .sid-chip {
-        font-size: 11.5px; color: var(--muted); font-family: ui-monospace, monospace;
-        background: var(--cite); border-radius: 999px; padding: 4px 11px;
+      aside.collapsed{width:56px}
+      aside.hidden{display:none}
+      .side-open,.side-mini{display:flex;flex-direction:column;flex:1;min-height:0}
+      aside.collapsed .side-open{display:none}
+      aside:not(.collapsed) .side-mini{display:none}
+      .side-head{display:flex;align-items:center;gap:11px;padding:18px 14px 14px 20px}
+      .side-brand{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0;cursor:pointer}
+      .side-brand .b1{font-size:15px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+      .side-brand .b2{font-size:11px;color:var(--text3);white-space:nowrap}
+      .side-nav-home{
+        display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;cursor:pointer;
+        font-weight:600;color:var(--text2);margin:0 12px;
       }
-      .chat-list { display: flex; flex-direction: column; gap: 8px; }
-      .chat-item {
-        display: flex; align-items: center; gap: 12px; padding: 13px 16px;
-        background: var(--panel); border: 1px solid var(--border); border-radius: 12px; cursor: pointer;
+      .side-nav-home:hover{background:var(--panel2)}
+      .side-nav-home.on{background:var(--primary-soft);color:var(--accent)}
+      .side-sec{display:flex;align-items:center;justify-content:space-between;padding:18px 14px 8px 22px}
+      .side-sec span{font-size:10.5px;font-weight:700;letter-spacing:.14em;color:var(--text3)}
+      .side-sec button{
+        flex:none;width:22px;height:22px;border:none;background:var(--primary-soft);color:var(--accent);
+        border-radius:7px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0;
       }
-      .chat-item:hover { border-color: var(--accent); }
-      .chat-item .t { flex: 1; font-size: 14px; font-weight: 600; }
-      .chat-item .time { font-size: 11.5px; color: var(--muted); }
-      .chat-item .x { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 4px; }
-      .chat-item .x:hover { color: var(--danger); }
+      .side-sec button:hover{background:var(--primary-soft2)}
+      .side-list{flex:1;overflow-y:auto;padding:0 12px;display:flex;flex-direction:column;gap:2px}
+      .side-item{
+        display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:9px;cursor:pointer;color:var(--text2);
+      }
+      .side-item:hover{background:var(--panel2)}
+      .side-item.on{background:var(--primary-soft);color:var(--accent)}
+      .side-item .dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--border2)}
+      .side-item.on .dot{background:var(--accent)}
+      .side-item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .side-item .ct{font-size:11px;color:var(--text3)}
+      .side-foot{
+        padding:14px 14px 14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:11px;
+      }
+      .avatar{
+        width:30px;height:30px;flex:none;border-radius:50%;background:var(--primary-soft2);color:var(--accent);
+        display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
+      }
+      .side-foot .who{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+      .side-foot .who .n{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .side-foot .who .o{font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .side-foot .gear{
+        flex:none;width:28px;height:28px;border:none;background:transparent;color:var(--text3);border-radius:8px;
+        cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;padding:0;
+      }
+      .side-foot .gear:hover{background:var(--panel2);color:var(--accent)}
+      .side-mini{align-items:center;gap:10px;padding:18px 0 0}
+      .side-mini .mini-item{
+        width:32px;height:32px;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+        font-size:14px;color:var(--text2);
+      }
+      .side-mini .mini-item:hover{background:var(--panel2)}
+      .side-mini .mini-item.on{background:var(--primary-soft);color:var(--accent)}
+      .side-mini .mini-item .dot{width:7px;height:7px;border-radius:50%;background:var(--border2)}
+      .side-mini .mini-item.on .dot{background:var(--accent)}
+      .side-mini .mini-list{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1;overflow-y:auto}
+      .side-mini .mini-foot{
+        display:flex;justify-content:center;padding:14px 0;border-top:1px solid var(--border);width:100%;
+      }
+      .side-mini .mini-foot .avatar{cursor:pointer}
 
-      .upload-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-      .upload-btn {
-        display: inline-block; cursor: pointer; font-size: 14px; font-weight: 600;
-        border: 1.5px dashed var(--accent); color: var(--accent); background: var(--accent-soft);
-        border-radius: 10px; padding: 10px 18px;
+      /* ---------- 登入 / 個資 ---------- */
+      .auth-wrap{flex:1;overflow-y:auto;display:flex;align-items:center;justify-content:center;padding:40px 24px}
+      .auth-col{width:100%;max-width:380px;display:flex;flex-direction:column;gap:22px}
+      .auth-col.wide{max-width:420px}
+      .auth-title{display:flex;flex-direction:column;gap:6px;text-align:center}
+      .auth-title .t1{font-size:22px;font-weight:750;letter-spacing:.01em}
+      .auth-title .t2{font-size:13.5px;color:var(--text2)}
+      .auth-note{text-align:center;font-size:12px;color:var(--text3);line-height:1.8}
+      .setup-progress{display:flex;flex-direction:column;gap:8px}
+      .setup-progress .row{display:flex;align-items:center;justify-content:space-between}
+      .setup-progress .row .l{font-size:12px;font-weight:650;color:var(--text3)}
+      .setup-progress .row .r{font-size:12px;font-weight:650;color:var(--accent)}
+      .setup-progress .track{height:5px;border-radius:999px;background:var(--panel2);overflow:hidden}
+      .setup-progress .fill{height:100%;border-radius:999px;background:var(--primary);width:25%;transition:width .25s ease}
+      .setup-step{display:none;flex-direction:column;gap:14px}
+      .setup-step.active{display:flex}
+      .role-row{display:flex;gap:8px}
+      .role-row button{
+        flex:1;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:13px;font-weight:650;
+        padding:10px 0;border-radius:10px;cursor:pointer;white-space:nowrap;
       }
-      .upload-btn input { display: none; }
-      #dropZone { border: 2px dashed transparent; transition: border-color .15s ease, background .15s ease; }
-      #dropZone.dragover { border-color: var(--accent); background: var(--accent-soft); }
-      #dropZone.dragover * { pointer-events: none; }
-      #uploadHint { color: var(--muted); font-size: 13px; }
-      .progress-wrap { margin-top: 14px; display: none; }
-      .progress-label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
-      .progress-track { height: 8px; border-radius: 999px; background: var(--cite); overflow: hidden; }
-      .progress-fill { height: 100%; width: 0%; border-radius: 999px; background: var(--accent); transition: width .15s ease; }
-      .progress-fill.indeterminate { width: 35% !important; animation: slide 1.1s ease-in-out infinite; }
-      @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
-      #uploadResult { margin-top: 10px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-      #uploadResult .ok { color: var(--ok); }
-      #uploadResult .err { color: var(--danger); }
+      .role-row button:hover{border-color:var(--primary-border)}
+      .role-row button.on{border-color:var(--primary-border);background:var(--primary-soft);color:var(--accent)}
+      .back-login{text-align:center}
+      .back-login span{font-size:12.5px;color:var(--text3);cursor:pointer}
+      .back-login span:hover{color:var(--accent)}
 
-      .papers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
-      .paper-card { position: relative; cursor: pointer; transition: transform .12s ease; }
-      .paper-card:hover { transform: translateY(-2px); }
-      .paper-card h3 { font-size: 14.5px; margin: 0 26px 8px 0; line-height: 1.45; }
-      .paper-card .summary {
-        font-size: 13px; color: var(--muted); line-height: 1.6; white-space: pre-wrap;
-        display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
-      }
-      .paper-card.expanded .summary { display: block; -webkit-line-clamp: unset; }
-      .paper-card .expand-hint { font-size: 12px; color: var(--accent); margin-top: 8px; }
-      .paper-card .del {
-        position: absolute; top: 10px; right: 10px; border: none; background: transparent;
-        color: var(--muted); font-size: 15px; cursor: pointer; padding: 4px 7px; border-radius: 7px; line-height: 1;
-      }
-      .paper-card .del:hover { color: var(--danger); background: var(--cite); }
-      .danger-zone { margin-top: 44px; text-align: center; }
+      /* ---------- 頁面容器 ---------- */
+      .page{flex:1;overflow-y:auto}
+      .page-inner{max-width:1020px;margin:0 auto;padding:36px 44px 56px}
+      .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:32px}
+      .page-head h1{margin:0 0 6px;font-size:24px;font-weight:750;letter-spacing:-.01em}
+      .page-head p{margin:0;color:var(--text2);font-size:14px}
 
-      /* ============ 聊天室 ============ */
-      #log { flex: 1; overflow-y: auto; padding: 26px 20px; display: flex; flex-direction: column; gap: 18px; }
-      .msg { max-width: 780px; width: fit-content; }
-      .msg .role { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
-      .bubble {
-        padding: 12px 15px; border-radius: 14px; border: 1px solid var(--border);
-        white-space: pre-wrap; line-height: 1.6; font-size: 14.5px; background: var(--panel);
-        box-shadow: var(--shadow);
+      /* ---------- 入口頁 ---------- */
+      .join-box{display:flex;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+      .join-box input{border:none;outline:none;background:transparent;color:var(--text);padding:10px 14px;font-size:13.5px;width:170px}
+      .join-box button{
+        border:none;background:transparent;color:var(--accent);font-size:13.5px;font-weight:650;padding:10px 14px;
+        cursor:pointer;border-left:1px solid var(--border);white-space:nowrap;
       }
-      .msg.user { align-self: flex-end; }
-      .msg.user .bubble { background: var(--user); }
-      .msg.user .role { text-align: right; }
-      .cursor { display: inline-block; width: 8px; height: 15px; background: var(--accent); vertical-align: -2px; animation: blink .85s steps(1) infinite; }
-      @keyframes blink { 50% { opacity: 0; } }
-      .cites { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px; }
-      .cite { font-size: 11.5px; background: var(--cite); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; color: var(--muted); }
-      .empty { color: var(--muted); font-size: 14px; margin: auto; text-align: center; max-width: 460px; line-height: 2; }
-      #chatForm { border-top: 1px solid var(--border); padding: 14px 18px; display: flex; gap: 10px; background: var(--panel); }
-      textarea {
-        flex: 1; resize: none; font: inherit; padding: 11px 13px; border: 1px solid var(--border);
-        border-radius: 11px; background: var(--bg); color: var(--ink); min-height: 46px; max-height: 170px;
+      .join-box button:hover{background:var(--primary-soft)}
+      .sess-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(288px,1fr));gap:18px}
+      .sess-card{
+        background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:22px;cursor:pointer;
+        display:flex;flex-direction:column;gap:14px;transition:box-shadow .15s ease,transform .15s ease,border-color .15s ease;
       }
-      textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-      #send {
-        font: inherit; font-weight: 700; border: none; border-radius: 11px; padding: 0 20px;
-        background: var(--accent); color: var(--accent-ink); cursor: pointer;
+      .sess-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px);border-color:var(--primary-border)}
+      .sess-card .hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+      .sess-card .nm{font-size:16px;font-weight:700;line-height:1.4;word-break:break-word}
+      .pill{flex:none;font-size:11px;font-weight:650;color:var(--accent);background:var(--primary-soft);border-radius:999px;padding:3px 10px}
+      .sess-card .meta{font-size:13px;color:var(--text2)}
+      .sess-card .ft{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
+      .sess-card .ft .tm{font-size:12px;color:var(--text3)}
+      .sess-card .forget{
+        border:none;background:transparent;color:var(--text3);font-size:12px;cursor:pointer;padding:2px 6px;border-radius:6px;
       }
-      #send:disabled { opacity: .5; cursor: default; }
+      .sess-card .forget:hover{color:var(--danger);background:var(--danger-soft)}
+      .avatar-sm{
+        width:26px;height:26px;border-radius:50%;background:var(--primary-soft2);border:2px solid var(--panel);
+        color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+      }
+      .empty-hero{
+        border:2px dashed var(--border2);border-radius:20px;padding:72px 32px;display:flex;flex-direction:column;
+        align-items:center;gap:14px;text-align:center;
+      }
+      .empty-hero .plus{
+        width:52px;height:52px;border-radius:16px;background:var(--primary-soft);color:var(--accent);
+        display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:300;
+      }
+      .empty-hero .t{font-size:16px;font-weight:700}
+      .empty-hero .d{font-size:13.5px;color:var(--text2);max-width:320px;line-height:1.7}
+
+      /* ---------- Session 主頁 ---------- */
+      .crumb{font-size:12px;color:var(--text3)}
+      .crumb a{cursor:pointer}
+      .sess-head{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:28px}
+      .sess-head .lt{display:flex;flex-direction:column;gap:5px}
+      .sess-head h1{margin:0;font-size:22px;font-weight:750;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+      .sess-head h1 .rn{
+        border:none;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;padding:3px 6px;border-radius:6px;
+      }
+      .sess-head h1 .rn:hover{background:var(--panel2);color:var(--accent)}
+      .sess-head .rt{display:flex;align-items:center;gap:14px}
+      .invite-wrap{position:relative}
+      .invite-btn{
+        border:1px solid var(--border);background:var(--panel);color:var(--text2);font-size:13px;font-weight:600;
+        padding:8px 15px;border-radius:9px;cursor:pointer;white-space:nowrap;
+      }
+      .invite-btn:hover,.invite-btn.on{border-color:var(--primary-border);color:var(--accent)}
+      .invite-pop{
+        position:absolute;top:calc(100% + 10px);right:0;width:320px;background:var(--panel);border:1px solid var(--border);
+        border-radius:16px;box-shadow:var(--shadow-lg);padding:18px;z-index:60;display:none;flex-direction:column;gap:14px;
+      }
+      .invite-pop.open{display:flex}
+      .invite-pop .hd{display:flex;align-items:center;justify-content:space-between}
+      .invite-pop .hd .t{font-size:14px;font-weight:700}
+      .invite-pop .hd button{
+        border:none;background:transparent;color:var(--text3);width:24px;height:24px;border-radius:7px;cursor:pointer;
+        font-size:13px;display:flex;align-items:center;justify-content:center;padding:0;
+      }
+      .invite-pop .hd button:hover{background:var(--panel2);color:var(--text)}
+      .invite-pop .code{
+        flex:1;min-width:0;font-size:11.5px;font-weight:650;font-family:ui-monospace,monospace;color:var(--accent);
+        background:var(--primary-soft);border:1px dashed var(--primary-border);border-radius:9px;padding:9px 12px;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      }
+      .invite-pop .copy{
+        flex:none;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:12.5px;font-weight:650;
+        padding:9px 14px;border-radius:9px;cursor:pointer;white-space:nowrap;
+      }
+      .invite-pop .copy:hover{border-color:var(--primary-border);color:var(--accent)}
+      .invite-pop .copy.ok{color:var(--ok)}
+      .invite-pop .lbl{font-size:12px;font-weight:650;color:var(--text2)}
+      .invite-pop .hint{font-size:11.5px;color:var(--text3);line-height:1.6}
+
+      .panel-card{background:var(--panel);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+      .panel-card .hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+      .panel-card .hd .t{font-size:14.5px;font-weight:700}
+      .chat-row{display:flex;flex-direction:column;gap:4px;padding:14px 20px;cursor:pointer;border-bottom:1px solid var(--border)}
+      .chat-row:last-child{border-bottom:none}
+      .chat-row:hover{background:var(--panel2)}
+      .chat-row .r1{display:flex;align-items:center;justify-content:space-between;gap:10px}
+      .chat-row .r1 .nm{font-size:13.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .chat-row .r1 .rgt{flex:none;display:flex;align-items:center;gap:8px}
+      .chat-row .r1 .tm{font-size:11.5px;color:var(--text3)}
+      .chat-row .r1 .del{
+        border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:6px;
+      }
+      .chat-row .r1 .del:hover{color:var(--danger);background:var(--danger-soft)}
+      .list-empty{padding:40px 24px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+      .list-empty .t{font-size:13.5px;font-weight:650;color:var(--text2)}
+      .list-empty .d{font-size:12.5px;color:var(--text3);line-height:1.7}
+
+      .lib{
+        margin-top:26px;border:2px dashed transparent;border-radius:20px;padding:16px 18px 18px;
+        transition:background .15s ease,border-color .15s ease;
+      }
+      .lib.dragover{border-color:var(--primary);background:var(--primary-soft)}
+      .lib.dragover *{pointer-events:none}
+      .lib-head{display:flex;align-items:center;gap:10px;margin:0 0 16px;flex-wrap:wrap}
+      .lib-head h2{margin:0;font-size:16.5px;font-weight:750}
+      .lib-head .cnt{font-size:13px;color:var(--text3)}
+      .lib-head .sp{flex:1}
+      .lib-head .hint{font-size:12px;color:var(--text3)}
+      .upload-input{display:none}
+      .upload-list{display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
+      .up-card{
+        background:var(--panel);border:1px solid var(--border);border-radius:13px;padding:13px 16px;
+        display:flex;flex-direction:column;gap:9px;transition:opacity .75s ease;
+      }
+      .up-card.error{border-color:var(--danger)}
+      .up-card.fading{opacity:0}
+      .up-card .r1{display:flex;align-items:center;gap:11px}
+      .up-card .ic{
+        flex:none;width:34px;height:34px;border-radius:9px;background:var(--primary-soft);color:var(--accent);
+        display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;letter-spacing:.04em;
+      }
+      .up-card.error .ic{background:var(--danger-soft);color:var(--danger)}
+      .up-card .info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+      .up-card .info .nm{font-size:13px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .up-card .info .st{font-size:11.5px;color:var(--text3)}
+      .up-card.error .info .st{color:var(--danger)}
+      .up-card.done .info .st{color:var(--ok)}
+      .up-card .acts{flex:none;display:flex;gap:12px;font-size:12.5px;font-weight:650}
+      .up-card .acts .retry{color:var(--accent);cursor:pointer}
+      .up-card .acts .rm{color:var(--text3);cursor:pointer}
+      .up-card .ok-mark{flex:none;font-size:12px;font-weight:700;color:var(--ok)}
+      .up-card .pct{flex:none;font-size:12px;font-weight:650;color:var(--text3)}
+      .up-card .track{height:4px;border-radius:999px;background:var(--panel2);overflow:hidden}
+      .up-card .fill{height:100%;border-radius:999px;background:var(--primary);width:0%;transition:width .18s ease}
+      .up-card.error .fill{background:var(--danger)}
+      .up-card .fill.indeterminate{width:35%!important;animation:slide 1.1s ease-in-out infinite}
+      @keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
+
+      .papers-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+      .paper-card{
+        background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px;display:flex;
+        flex-direction:column;gap:11px;cursor:pointer;transition:box-shadow .15s ease,border-color .15s ease;
+      }
+      .paper-card:hover{box-shadow:var(--shadow-lg);border-color:var(--primary-border)}
+      .paper-card .r1{display:flex;align-items:center;gap:10px}
+      .paper-card .r1 .sp{flex:1}
+      .paper-card .r1 .file{font-size:11.5px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
+      .paper-card .r1 .del{
+        flex:none;width:24px;height:24px;border:none;background:transparent;color:var(--text3);border-radius:7px;
+        cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;padding:0;
+      }
+      .paper-card .r1 .del:hover{background:var(--danger-soft);color:var(--danger)}
+      .paper-card .ttl{font-size:14.5px;font-weight:700;line-height:1.45;word-break:break-word}
+      .paper-card .sum{
+        font-size:13px;color:var(--text2);line-height:1.7;white-space:pre-wrap;
+        display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+      }
+      .paper-card.expanded .sum{display:block;-webkit-line-clamp:unset}
+      .lib-empty{
+        border:2px dashed var(--border2);border-radius:16px;padding:44px 24px;display:flex;flex-direction:column;
+        align-items:center;gap:8px;text-align:center;
+      }
+      .lib-empty .t{font-size:13.5px;font-weight:650;color:var(--text2)}
+      .lib-empty .d{font-size:12.5px;color:var(--text3)}
+      .danger-zone{margin-top:44px;text-align:center}
+
+      /* ---------- 聊天室 ---------- */
+      .chat-top{
+        flex:none;display:flex;align-items:center;gap:14px;padding:12px 24px;border-bottom:1px solid var(--border);
+        background:var(--panel);
+      }
+      .chat-top .back{
+        border:1px solid var(--border);background:transparent;color:var(--text2);width:32px;height:32px;border-radius:9px;
+        cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;flex:none;
+      }
+      .chat-top .back:hover{border-color:var(--primary-border);color:var(--accent)}
+      .chat-top .tt{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+      .chat-top .tt .t1{font-size:14.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .chat-top .tt .t2{font-size:11.5px;color:var(--text3)}
+      .chat-top .del-chat{
+        flex:none;border:none;background:transparent;color:var(--text3);font-size:12.5px;font-weight:650;cursor:pointer;
+        padding:6px 10px;border-radius:8px;
+      }
+      .chat-top .del-chat:hover{color:var(--danger);background:var(--danger-soft)}
+      #log{flex:1;overflow-y:auto;min-height:0}
+      #logInner{max-width:780px;margin:0 auto;padding:28px 28px 16px;display:flex;flex-direction:column;gap:18px}
+      .chat-empty{display:flex;flex-direction:column;align-items:center;gap:14px;padding:56px 0 24px;text-align:center}
+      .chat-empty .logo{
+        width:44px;height:44px;border-radius:13px;background:var(--primary-soft);color:var(--accent);
+        display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;
+      }
+      .chat-empty .t{font-size:15px;font-weight:700}
+      .chat-empty .d{font-size:13px;color:var(--text2);max-width:340px;line-height:1.7}
+      .sugg-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px}
+      .sugg-row button{
+        border:1px solid var(--border);background:var(--panel);color:var(--text2);font-size:12.5px;padding:8px 14px;
+        border-radius:999px;cursor:pointer;
+      }
+      .sugg-row button:hover{border-color:var(--primary-border);color:var(--accent);background:var(--primary-soft)}
+      .msg{display:flex;gap:10px;align-items:flex-end}
+      .msg.user{flex-direction:row-reverse}
+      .msg .ai-av{
+        flex:none;width:28px;height:28px;border-radius:9px;background:var(--primary-soft2);color:var(--accent);
+        display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;margin-bottom:2px;
+      }
+      .bubble{
+        max-width:76%;padding:12px 16px;font-size:14px;line-height:1.85;box-shadow:var(--shadow);
+        background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:14px 14px 14px 4px;
+      }
+      .msg.user .bubble{background:var(--primary);color:var(--on-primary);border:none;border-radius:14px 14px 4px 14px}
+      .bubble .txt{white-space:pre-wrap;overflow-wrap:anywhere}
+      .cursor{
+        display:inline-block;width:2px;height:14px;background:var(--accent);margin-left:2px;vertical-align:-2px;
+        animation:blinkCursor 1s step-end infinite;
+      }
+      .cites{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px}
+      .cite{position:relative;display:inline-flex}
+      .cite .tag{
+        display:inline-flex;align-items:center;padding:1px 9px;border-radius:999px;background:var(--primary-soft);
+        border:1px solid var(--primary-border);color:var(--accent);font-size:11.5px;font-weight:650;line-height:1.7;
+        cursor:default;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;
+      }
+      .cite-pop{
+        position:absolute;bottom:calc(100% + 9px);left:-8px;width:300px;background:var(--panel);border:1px solid var(--border);
+        border-radius:13px;box-shadow:var(--shadow-lg);padding:13px 15px;z-index:50;display:none;flex-direction:column;gap:7px;
+      }
+      .cite:hover .cite-pop{display:flex}
+      body.no-citepreview .cite-pop{display:none!important}
+      .cite-pop .t{font-size:12px;font-weight:700;color:var(--text);line-height:1.5}
+      .cite-pop .q{
+        font-size:12px;color:var(--text2);line-height:1.7;font-style:italic;border-left:2.5px solid var(--primary-border);
+        padding-left:10px;white-space:normal;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;
+      }
+      .cite-pop .p{font-size:11px;color:var(--text3)}
+      .thinking{display:flex;gap:10px;align-items:flex-end}
+      .thinking .box{
+        display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--panel);border:1px solid var(--border);
+        border-radius:14px 14px 14px 4px;box-shadow:var(--shadow);
+      }
+      .thinking .dots{display:flex;gap:5px}
+      .thinking .dots span{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:dotPulse 1.2s ease-in-out infinite}
+      .thinking .dots span:nth-child(2){animation-delay:.18s}
+      .thinking .dots span:nth-child(3){animation-delay:.36s}
+      .thinking .lb{font-size:12.5px;color:var(--text3)}
+      .composer{flex:none;padding:12px 28px 20px}
+      .composer-inner{max-width:780px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+      .composer .box{
+        display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--border);border-radius:14px;
+        padding:8px 8px 8px 18px;box-shadow:var(--shadow);
+      }
+      .composer input{flex:1;border:none;outline:none;background:transparent;color:var(--text);font-size:14px;padding:8px 0}
+      .composer .send{
+        flex:none;width:36px;height:36px;border:none;border-radius:10px;background:var(--primary);color:var(--on-primary);
+        font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+      }
+      .composer .send:hover{background:var(--primary-strong)}
+      .composer .send:disabled{opacity:.45;cursor:default}
+      .composer .note{text-align:center;font-size:11.5px;color:var(--text3)}
+
+      /* ---------- 設定彈窗 ---------- */
+      #settingsOverlay{
+        position:fixed;inset:0;background:rgba(12,12,20,.45);z-index:100;display:none;align-items:center;
+        justify-content:center;padding:24px;
+      }
+      #settingsOverlay.open{display:flex}
+      .settings-modal{
+        width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:18px;
+        box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden;
+      }
+      .settings-modal .hd{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--border)}
+      .settings-modal .hd .t{font-size:15.5px;font-weight:750}
+      .settings-modal .hd button{
+        border:none;background:transparent;color:var(--text3);width:28px;height:28px;border-radius:8px;cursor:pointer;
+        font-size:15px;display:flex;align-items:center;justify-content:center;padding:0;
+      }
+      .settings-modal .hd button:hover{background:var(--panel2);color:var(--text)}
+      .settings-modal .bd{padding:20px 22px;display:flex;flex-direction:column;gap:18px;max-height:60vh;overflow-y:auto}
+      .settings-modal .sec-lb{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--text3)}
+      .settings-modal .sec{display:flex;flex-direction:column;gap:12px}
+      .theme-row{display:flex;gap:8px}
+      .theme-row button{
+        flex:1;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:13px;font-weight:650;
+        padding:9px 0;border-radius:10px;cursor:pointer;white-space:nowrap;
+      }
+      .theme-row button:hover{border-color:var(--primary-border)}
+      .theme-row button.on{border-color:var(--primary-border);background:var(--primary-soft);color:var(--accent)}
+      .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+      .toggle-row .lt .a{font-size:13.5px;font-weight:650}
+      .toggle-row .lt .b{font-size:12px;color:var(--text3)}
+      .switch{
+        flex:none;width:42px;height:24px;border:none;border-radius:999px;cursor:pointer;padding:2px;
+        background:var(--border2);display:flex;justify-content:flex-start;
+      }
+      .switch.on{background:var(--primary);justify-content:flex-end}
+      .switch span{width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+      .settings-modal .ft{display:flex;align-items:center;gap:10px;padding:16px 22px;border-top:1px solid var(--border)}
+      .settings-modal .ft .sp{flex:1}
+      .settings-modal .ft .btn-plain,.settings-modal .ft .btn-primary{padding:9px 16px;font-size:13px;border-radius:9px}
     </style>
   </head>
   <body>
-    <!-- ============ 入口頁 #/ ============ -->
-    <div id="view-entry" class="view">
-      <div class="wrap">
-        <div class="hero">
-          <div class="logo">📄</div>
-          <h1>Paper Reading Agent</h1>
-          <p>建立自己的論文空間：上傳 PDF、自動摘要、多個聊天室、附引用的問答。<br />每個 Session 彼此獨立，可用連結分享。</p>
-          <button class="btn" id="newSession">＋ 建立新 Session</button>
-        </div>
-
-        <div class="section-title">我的 Sessions</div>
-        <div id="sessionList"></div>
-
-        <div class="section-title">加入既有 Session</div>
-        <div class="card">
-          <div style="font-size:13px;color:var(--muted)">貼上別人分享的連結或 Session ID：</div>
-          <div class="join-row">
-            <input id="joinInput" placeholder="https://…/#/s/xxxx 或 session id" />
-            <button class="btn small" id="joinBtn">加入</button>
+    <div id="app">
+      <!-- ===================== 側邊欄 ===================== -->
+      <aside id="sidebar" class="hidden">
+        <div class="side-open">
+          <div class="side-head">
+            <div class="side-brand" id="brandBtn">
+              <div class="b1">析讀 AI</div>
+              <div class="b2">論文閱讀助手</div>
+            </div>
+            <button class="icon-btn" id="collapseBtn" title="收合側邊欄">«</button>
+          </div>
+          <div style="padding-top:6px">
+            <div class="side-nav-home" id="navHome"><span style="width:16px;text-align:center;font-size:13px">⌂</span><span>Session 總覽</span></div>
+          </div>
+          <div class="side-sec">
+            <span>SESSIONS</span>
+            <button id="sideNewSession" title="建立新 Session">＋</button>
+          </div>
+          <div class="side-list" id="sideList"></div>
+          <div class="side-foot">
+            <div class="avatar" id="footAvatar">？</div>
+            <div class="who">
+              <div class="n" id="footName"></div>
+              <div class="o" id="footOrg"></div>
+            </div>
+            <button class="gear" id="openSettings" title="設定">⚙</button>
           </div>
         </div>
-      </div>
+        <div class="side-mini">
+          <button class="icon-btn" id="expandBtn" title="展開側邊欄">»</button>
+          <div class="mini-item" id="miniHome" title="Session 總覽">⌂</div>
+          <div class="mini-list" id="miniList"></div>
+          <div class="mini-foot"><div class="avatar" id="miniAvatar" title="設定">？</div></div>
+        </div>
+      </aside>
+
+      <main>
+        <!-- ===================== 登入 ===================== -->
+        <div id="view-login" class="view">
+          <div class="auth-wrap">
+            <div class="auth-col">
+              <div class="auth-title">
+                <div class="t1">析讀 AI</div>
+                <div class="t2">登入以繼續你的論文研讀</div>
+              </div>
+              <div class="auth-card">
+                <div class="field">
+                  <label>電子信箱</label>
+                  <input class="input" id="loginEmail" placeholder="name@example.edu" autocomplete="email" />
+                </div>
+                <div class="field">
+                  <label>密碼</label>
+                  <input class="input" id="loginPw" type="password" placeholder="••••••••" autocomplete="current-password" />
+                </div>
+                <div class="err-box" id="loginErr" style="display:none"></div>
+                <button class="btn-primary" id="loginBtn" style="margin-top:4px">登入</button>
+                <button class="btn-outline" id="registerBtn">註冊新帳號</button>
+              </div>
+              <div class="auth-note">帳號與個人資料僅儲存在此裝置的瀏覽器中，<br />用於個人化介面，不會上傳到伺服器。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================== 個人資訊填寫 ===================== -->
+        <div id="view-setup" class="view">
+          <div class="auth-wrap">
+            <div class="auth-col wide">
+              <div class="auth-title">
+                <div class="t1" style="font-size:20px">建立你的個人資料</div>
+                <div class="t2">這是你第一次使用析讀 AI，先填寫基本資訊。</div>
+              </div>
+              <div class="auth-card" style="gap:16px">
+                <div class="setup-progress">
+                  <div class="row">
+                    <span class="l">第 <span id="setupStepNum">1</span> 步，共 4 步</span>
+                    <span class="r" id="setupStepTitle">帳號密碼</span>
+                  </div>
+                  <div class="track"><div class="fill" id="setupFill"></div></div>
+                </div>
+
+                <div class="setup-step" data-step="1">
+                  <div class="field">
+                    <label>Email（帳號）</label>
+                    <input class="input" id="setupEmail" placeholder="name@example.edu" autocomplete="email" />
+                  </div>
+                  <div class="field">
+                    <label>設定密碼</label>
+                    <input class="input" id="setupPw" type="password" placeholder="至少 8 個字元" autocomplete="new-password" />
+                  </div>
+                  <div class="err-box" id="setupErr1" style="display:none"></div>
+                  <button class="btn-primary setup-next">下一步</button>
+                </div>
+
+                <div class="setup-step" data-step="2">
+                  <div class="field">
+                    <label>稱呼</label>
+                    <input class="input" id="setupName" placeholder="我們該怎麼稱呼你？" />
+                  </div>
+                  <div class="err-box" id="setupErr2" style="display:none"></div>
+                  <div style="display:flex;gap:10px">
+                    <button class="btn-plain setup-back">上一步</button>
+                    <button class="btn-primary setup-next" style="flex:1">下一步</button>
+                  </div>
+                </div>
+
+                <div class="setup-step" data-step="3">
+                  <div class="field">
+                    <label>服務單位 / 學校</label>
+                    <select class="input" id="setupSchool"></select>
+                  </div>
+                  <div class="field" id="setupSchoolCustomWrap" style="display:none">
+                    <label>請輸入單位名稱</label>
+                    <input class="input" id="setupSchoolCustom" placeholder="例：中研院資訊所" />
+                  </div>
+                  <div class="field">
+                    <label>科系 / 研究所</label>
+                    <input class="input" id="setupDept" placeholder="例：電機工程學系" />
+                  </div>
+                  <div style="display:flex;gap:10px">
+                    <button class="btn-plain setup-back">上一步</button>
+                    <button class="btn-primary setup-next" style="flex:1">下一步</button>
+                  </div>
+                </div>
+
+                <div class="setup-step" data-step="4">
+                  <div class="field">
+                    <label>身分</label>
+                    <div class="role-row" id="setupRoles"></div>
+                  </div>
+                  <div style="display:flex;gap:10px">
+                    <button class="btn-plain setup-back">上一步</button>
+                    <button class="btn-primary" id="finishSetup" style="flex:1">完成，開始使用</button>
+                  </div>
+                </div>
+              </div>
+              <div class="back-login"><span id="backToLogin">← 返回登入</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================== 入口頁 #/ ===================== -->
+        <div id="view-home" class="view">
+          <div class="page">
+            <div class="page-inner" style="padding-top:44px">
+              <div class="page-head">
+                <div>
+                  <h1>Session 總覽</h1>
+                  <p>每個 Session 是一組論文與相關對話的工作空間。</p>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <button class="btn-primary" id="newSession" style="font-size:13.5px;padding:11px 18px;box-shadow:var(--shadow)">＋ 建立 Session</button>
+                  <div class="join-box">
+                    <input id="joinInput" placeholder="貼上邀請連結或 ID 加入…" />
+                    <button id="joinBtn">加入</button>
+                  </div>
+                </div>
+              </div>
+              <div id="homeBody"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================== Session 主頁 #/s/{sid} ===================== -->
+        <div id="view-session" class="view">
+          <div class="page">
+            <div class="page-inner">
+              <div class="sess-head">
+                <div class="lt">
+                  <div class="crumb"><a id="crumbHome">Session 總覽</a> / </div>
+                  <h1><span id="sessName"></span><button class="rn" id="renameBtn" title="重新命名">✎</button></h1>
+                </div>
+                <div class="rt">
+                  <div style="display:flex"><span class="avatar-sm" id="sessAvatar" style="border-color:var(--bg)">？</span></div>
+                  <div class="invite-wrap">
+                    <button class="invite-btn" id="inviteBtn">邀請成員</button>
+                    <div class="invite-pop" id="invitePop">
+                      <div class="hd">
+                        <span class="t">邀請成員</span>
+                        <button id="inviteClose">✕</button>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:6px">
+                        <span class="lbl">分享邀請連結</span>
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <span class="code" id="inviteLink"></span>
+                          <button class="copy" id="copyInvite">複製</button>
+                        </div>
+                        <span class="hint">拿到連結的人開啟後即可加入這個 Session，共用論文庫與聊天室。</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="hd">
+                  <span class="t">聊天室</span>
+                  <button class="btn-soft" id="newChatBtn">＋ 新對話</button>
+                </div>
+                <div id="chatList"></div>
+              </div>
+
+              <div class="lib" id="dropZone">
+                <div class="lib-head">
+                  <h2>論文庫</h2>
+                  <span class="cnt" id="paperCount">0 篇</span>
+                  <span class="sp"></span>
+                  <span class="hint">拖曳 PDF 到此區域即自動上傳</span>
+                  <label class="btn-soft" style="cursor:pointer">↑ 上傳論文<input class="upload-input" type="file" id="file" accept="application/pdf" multiple /></label>
+                </div>
+                <div class="upload-list" id="uploadList"></div>
+                <div id="papersBody"></div>
+              </div>
+
+              <div class="danger-zone">
+                <button class="btn-danger-ghost" id="deleteSession">刪除整個 Session（論文與聊天記錄全部移除）</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================== 聊天室 #/s/{sid}/c/{chatId} ===================== -->
+        <div id="view-chat" class="view">
+          <div class="chat-top">
+            <button class="back" id="backToSession">←</button>
+            <div class="tt">
+              <div class="t1" id="chatTitle">對話</div>
+              <div class="t2" id="chatSub"></div>
+            </div>
+            <button class="del-chat" id="deleteChatBtn">刪除聊天室</button>
+          </div>
+          <div id="log"><div id="logInner"></div></div>
+          <div class="composer">
+            <div class="composer-inner">
+              <div class="box">
+                <input id="input" placeholder="針對這些論文提問…" autocomplete="off" />
+                <button class="send" id="send" title="送出">↑</button>
+              </div>
+              <div class="note">回覆由 AI 生成，請自行查證。將滑鼠移到引用標籤上可預覽檢索到的原文段落。</div>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
 
-    <!-- ============ Session 主頁 #/s/{sid} ============ -->
-    <div id="view-session" class="view">
-      <div class="top-bar">
-        <a class="back" href="#/">← 所有 Sessions</a>
-        <span class="title">📄 Session</span>
-        <span class="sid-chip" id="sidChip"></span>
-        <button class="btn small ghost" id="shareBtn">複製分享連結</button>
-      </div>
-      <div class="wrap">
-        <div class="section-title">聊天室</div>
-        <div class="chat-list" id="chatList"></div>
-        <div style="margin-top:12px">
-          <button class="btn small" id="newChatBtn">＋ 新增聊天室</button>
+    <!-- ===================== 設定彈窗 ===================== -->
+    <div id="settingsOverlay">
+      <div class="settings-modal" id="settingsModal">
+        <div class="hd">
+          <span class="t">設定</span>
+          <button id="closeSettings">✕</button>
         </div>
-
-        <div class="section-title">新增論文</div>
-        <div class="card" id="dropZone">
-          <div class="upload-row">
-            <label class="upload-btn">
-              選擇 PDF 上傳
-              <input type="file" id="file" accept="application/pdf" multiple />
-            </label>
-            <span id="uploadHint">或直接把 PDF 拖曳到這個區塊（可一次拖多個）</span>
+        <div class="bd">
+          <div class="sec">
+            <span class="sec-lb">個人資訊</span>
+            <div class="field"><label>姓名</label><input class="input" id="draftName" style="padding:10px 13px;font-size:13.5px" /></div>
+            <div class="field"><label>服務單位 / 學校</label><input class="input" id="draftSchool" style="padding:10px 13px;font-size:13.5px" /></div>
+            <div class="field"><label>科系 / 研究所</label><input class="input" id="draftDept" style="padding:10px 13px;font-size:13.5px" /></div>
+            <div class="field"><label>身分</label><input class="input" id="draftRole" style="padding:10px 13px;font-size:13.5px" /></div>
           </div>
-          <div class="progress-wrap" id="progressWrap">
-            <div class="progress-label"><span id="progressPhase">上傳中</span><span id="progressPct"></span></div>
-            <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="sec" style="gap:10px">
+            <span class="sec-lb">外觀</span>
+            <div class="theme-row" id="themeRow"></div>
           </div>
-          <div id="uploadResult"></div>
+          <div class="toggle-row">
+            <div class="lt">
+              <div class="a">引用預覽</div>
+              <div class="b">滑鼠移到引用標籤時顯示原文</div>
+            </div>
+            <button class="switch" id="citeToggle"><span></span></button>
+          </div>
         </div>
-
-        <div class="section-title">論文庫（<span id="paperCount">0</span> 篇）</div>
-        <div class="papers-grid" id="papersGrid"></div>
-
-        <div class="danger-zone">
-          <button class="btn danger small" id="deleteSession">刪除整個 Session（論文與聊天記錄全部移除）</button>
+        <div class="ft">
+          <button class="btn-danger-ghost" id="logoutBtn">登出</button>
+          <span class="sp"></span>
+          <button class="btn-plain" id="cancelSettings">取消</button>
+          <button class="btn-primary" id="saveSettings">儲存</button>
         </div>
       </div>
-    </div>
-
-    <!-- ============ 聊天室 #/s/{sid}/c/{chatId} ============ -->
-    <div id="view-chat" class="view">
-      <div class="top-bar">
-        <a class="back" id="backToSession" href="#/">← 返回 Session</a>
-        <span class="title" id="chatTitle">對話</span>
-        <button class="btn small danger" id="deleteChatBtn">刪除聊天室</button>
-      </div>
-      <div id="log"></div>
-      <form id="chatForm">
-        <textarea id="input" placeholder="輸入問題… (Enter 送出，Shift+Enter 換行)"></textarea>
-        <button type="submit" id="send">送出</button>
-      </form>
     </div>
 
     <script>
       // ---------- 工具 ----------
       const $ = (id) => document.getElementById(id);
-      const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
       const uuid = () => crypto.randomUUID();
       function stripMarkdown(s) {
         return s
@@ -271,162 +800,549 @@
         if (m < 1440) return `${Math.floor(m / 60)} 小時前`;
         return `${Math.floor(m / 1440)} 天前`;
       }
-
-      // ---------- 已知 session 清單（localStorage 只記「我去過哪些」） ----------
-      const SESSIONS_KEY = "paper-agent-sessions";
-      function knownSessions() {
-        try { return JSON.parse(localStorage.getItem(SESSIONS_KEY)) || []; } catch { return []; }
+      function fmtSize(bytes) {
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+        return (bytes / 1024 / 1024).toFixed(1) + " MB";
       }
-      function rememberSession(id) {
-        const list = knownSessions().filter((s) => s.id !== id);
-        list.unshift({ id, lastUsed: Date.now() });
-        localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, 30)));
+
+      // ---------- 偏好設定（主題 / 引用預覽 / 側欄收合） ----------
+      const PREFS_KEY = "pa-prefs";
+      let prefs = { theme: "system", citePreview: true, sideCollapsed: false };
+      try { prefs = { ...prefs, ...(JSON.parse(localStorage.getItem(PREFS_KEY)) || {}) }; } catch {}
+      function savePrefs() { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }
+      function applyPrefs() {
+        const el = document.documentElement;
+        if (prefs.theme === "system") el.removeAttribute("data-force");
+        else el.setAttribute("data-force", prefs.theme);
+        document.body.classList.toggle("no-citepreview", !prefs.citePreview);
+        $("sidebar").classList.toggle("collapsed", !!prefs.sideCollapsed);
+      }
+
+      // ---------- 伺服器帳號（token 存本機，帳號資料存 Cloudflare KV） ----------
+      const TOKEN_KEY = "pa-token";
+      let ME = null; // { email, profile: {name, school, dept, role}, sessions: [{id, name, role, lastUsed}] }
+      const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
+      const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
+      const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+      /** fetch 加上 Authorization；遇到 401 直接把使用者請回登入頁。 */
+      async function authFetch(url, init = {}) {
+        const headers = { ...(init.headers || {}), Authorization: `Bearer ${getToken()}` };
+        const res = await fetch(url, { ...init, headers });
+        if (res.status === 401) {
+          clearToken();
+          ME = null;
+          show("login");
+        }
+        return res;
+      }
+
+      function currentProfile() {
+        return ME ? { email: ME.email, ...ME.profile } : null;
+      }
+
+      // ---------- 我的 session 清單（伺服器為準；論文/對話數為本機快取） ----------
+      const countsCache = new Map(); // id -> {papers, chats}
+      function knownSessions() {
+        return (ME?.sessions || []).map((s) => ({ ...s, ...(countsCache.get(s.id) || {}) }));
+      }
+      function sessionEntry(id) { return knownSessions().find((s) => s.id === id); }
+      function rememberSession(id, patch = {}) {
+        if (!ME) return;
+        // 樂觀更新本機狀態，再同步到伺服器
+        const old = ME.sessions.find((s) => s.id === id) || {};
+        const next = { id, name: patch.name ?? old.name ?? "未命名 Session", role: patch.role ?? old.role ?? "成員", lastUsed: Date.now() };
+        ME.sessions = [next, ...ME.sessions.filter((s) => s.id !== id)];
+        authFetch("/me/sessions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, name: patch.name, role: patch.role }),
+        })
+          .then(async (r) => { if (r.ok) ME.sessions = ((await r.json()).sessions) || ME.sessions; })
+          .catch(() => {});
       }
       function forgetSession(id) {
-        localStorage.setItem(SESSIONS_KEY, JSON.stringify(knownSessions().filter((s) => s.id !== id)));
+        if (!ME) return;
+        ME.sessions = ME.sessions.filter((s) => s.id !== id);
+        authFetch(`/me/sessions/${id}`, { method: "DELETE" }).catch(() => {});
+      }
+      function cacheCounts(id, patch) {
+        countsCache.set(id, { ...(countsCache.get(id) || {}), ...patch });
+      }
+      function sessionName(id) {
+        const e = sessionEntry(id);
+        return (e && e.name) || "未命名 Session";
       }
 
-      // ---------- 路由 ----------
+      // ---------- 路由（含本機登入閘門） ----------
       let SID = null, CHAT_ID = null;
-      const views = { entry: $("view-entry"), session: $("view-session"), chat: $("view-chat") };
+      const VIEWS = ["login", "setup", "home", "session", "chat"];
+      function show(name) {
+        for (const v of VIEWS) $("view-" + v).classList.toggle("active", v === name);
+        $("sidebar").classList.toggle("hidden", name === "login" || name === "setup");
+      }
       function route() {
+        if (!currentProfile()) { show("login"); return; }
         const m = location.hash.match(/^#\/s\/([A-Za-z0-9-]{8,64})(?:\/c\/([A-Za-z0-9-]{1,64}))?/);
         SID = m ? m[1] : null;
         CHAT_ID = m && m[2] ? m[2] : null;
-        views.entry.classList.toggle("active", !SID);
-        views.session.classList.toggle("active", !!SID && !CHAT_ID);
-        views.chat.classList.toggle("active", !!SID && !!CHAT_ID);
-        if (!SID) {
-          renderSessionList();
-        } else {
-          rememberSession(SID);
-          if (CHAT_ID) enterChat();
-          else enterSession();
+        renderSidebar();
+        if (!SID) { show("home"); renderHome(); }
+        else {
+          rememberSession(SID, sessionEntry(SID) ? {} : { name: "未命名 Session", role: "成員" });
+          if (CHAT_ID) { show("chat"); enterChat(); }
+          else { show("session"); enterSession(); }
         }
       }
       window.addEventListener("hashchange", route);
 
-      // ---------- 入口頁 ----------
-      function renderSessionList() {
+      // ---------- 側邊欄 ----------
+      function renderSidebar() {
+        const p = currentProfile();
+        if (!p) return;
+        const initial = (p.name || "？").slice(-1);
+        $("footAvatar").textContent = initial;
+        $("miniAvatar").textContent = initial;
+        $("footName").textContent = p.name || "";
+        $("footOrg").textContent = [p.school, p.dept, p.role].filter(Boolean).join(" · ");
+        $("navHome").classList.toggle("on", !SID);
+        $("miniHome").classList.toggle("on", !SID);
+
         const list = knownSessions();
-        $("sessionList").innerHTML =
-          list
-            .map(
-              (s) => `
-            <div class="session-item" data-id="${esc(s.id)}">
-              <span class="name">Session</span>
-              <span class="sid">${esc(s.id.slice(0, 13))}…</span>
-              <span class="sid">${timeAgo(s.lastUsed)}</span>
-              <button class="forget" title="從此裝置移除（不刪伺服器資料）">✕</button>
-            </div>`
-            )
-            .join("") ||
-          '<div style="color:var(--muted);font-size:14px">還沒有任何 Session — 建立一個開始吧。</div>';
-        for (const item of document.querySelectorAll(".session-item")) {
-          item.addEventListener("click", () => (location.hash = `#/s/${item.dataset.id}`));
-          item.querySelector(".forget").addEventListener("click", (e) => {
-            e.stopPropagation();
-            forgetSession(item.dataset.id);
-            renderSessionList();
-          });
+        $("sideList").innerHTML = list
+          .map(
+            (s) => `
+          <div class="side-item${s.id === SID ? " on" : ""}" data-id="${esc(s.id)}">
+            <span class="dot"></span>
+            <span class="nm">${esc(s.name || "未命名 Session")}</span>
+            <span class="ct">${s.papers != null ? s.papers : ""}</span>
+          </div>`
+          )
+          .join("");
+        $("miniList").innerHTML = list
+          .map(
+            (s) => `
+          <div class="mini-item${s.id === SID ? " on" : ""}" data-id="${esc(s.id)}" title="${esc(s.name || "未命名 Session")}">
+            <span class="dot"></span>
+          </div>`
+          )
+          .join("");
+        for (const el of document.querySelectorAll(".side-item[data-id], .mini-item[data-id]")) {
+          el.addEventListener("click", () => (location.hash = `#/s/${el.dataset.id}`));
         }
       }
-      $("newSession").addEventListener("click", () => {
-        location.hash = `#/s/${uuid()}`;
+      $("navHome").addEventListener("click", () => (location.hash = "#/"));
+      $("miniHome").addEventListener("click", () => (location.hash = "#/"));
+      $("brandBtn").addEventListener("click", () => (location.hash = "#/"));
+      $("collapseBtn").addEventListener("click", () => { prefs.sideCollapsed = true; savePrefs(); applyPrefs(); });
+      $("expandBtn").addEventListener("click", () => { prefs.sideCollapsed = false; savePrefs(); applyPrefs(); });
+      $("sideNewSession").addEventListener("click", createSession);
+      $("miniAvatar").addEventListener("click", openSettings);
+
+      // ---------- 登入 / 註冊 ----------
+      function loginError(msg) {
+        const el = $("loginErr");
+        el.style.display = msg ? "block" : "none";
+        el.textContent = msg || "";
+      }
+      async function doLogin() {
+        const email = $("loginEmail").value.trim().toLowerCase();
+        if (!email || !email.includes("@")) { loginError("請輸入有效的電子信箱。"); return; }
+        if (!$("loginPw").value) { loginError("請輸入密碼。"); return; }
+        loginError("");
+        $("loginBtn").disabled = true;
+        try {
+          const res = await fetch("/auth/login", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ email, password: $("loginPw").value }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            loginError((data.error || "登入失敗") + "。還沒有帳號？點下方「建立新帳號」。");
+            return;
+          }
+          setToken(data.token);
+          ME = { email: data.email, profile: data.profile, sessions: data.sessions || [] };
+          $("loginPw").value = "";
+          location.hash = "#/";
+          route();
+        } catch {
+          loginError("無法連線到伺服器，請稍後再試。");
+        } finally {
+          $("loginBtn").disabled = false;
+        }
+      }
+      $("loginBtn").addEventListener("click", doLogin);
+      $("registerBtn").addEventListener("click", () => startSetup(""));
+      for (const id of ["loginEmail", "loginPw"]) {
+        $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+        $(id).addEventListener("input", () => loginError(""));
+      }
+
+      // ---------- 個人資訊填寫 ----------
+      const SCHOOLS = ["國立臺灣大學","國立清華大學","國立陽明交通大學","國立成功大學","國立政治大學","國立中央大學","國立中山大學","國立中興大學","國立臺灣師範大學","國立臺灣科技大學","國立臺北科技大學","國立中正大學","國立臺北大學","國立東華大學","國立暨南國際大學","國立臺灣海洋大學","國立嘉義大學","國立高雄大學","國立彰化師範大學","國立高雄師範大學","逢甲大學","輔仁大學","東吳大學","淡江大學","東海大學","中原大學","元智大學","長庚大學","銘傳大學","世新大學","實踐大學","靜宜大學","義守大學","中國醫藥大學","臺北醫學大學","高雄醫學大學","其他"];
+      const ROLES = ["大學生", "研究生", "其他"];
+      const STEP_TITLES = { 1: "帳號密碼", 2: "你的稱呼", 3: "學校 / 科系", 4: "你的身分" };
+      let setupStep = 1;
+      let setupRole = "研究生";
+      $("setupSchool").innerHTML = SCHOOLS.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+      function renderRoles() {
+        $("setupRoles").innerHTML = ROLES.map(
+          (r) => `<button type="button" class="${r === setupRole ? "on" : ""}" data-role="${esc(r)}">${esc(r)}</button>`
+        ).join("");
+        for (const b of $("setupRoles").querySelectorAll("button")) {
+          b.addEventListener("click", () => { setupRole = b.dataset.role; renderRoles(); });
+        }
+      }
+      function setupError(step, msg) {
+        const el = $("setupErr" + step);
+        if (!el) return;
+        el.style.display = msg ? "block" : "none";
+        el.textContent = msg || "";
+      }
+      function showSetupStep(n) {
+        setupStep = n;
+        for (const el of document.querySelectorAll(".setup-step")) {
+          el.classList.toggle("active", Number(el.dataset.step) === n);
+        }
+        $("setupStepNum").textContent = n;
+        $("setupStepTitle").textContent = STEP_TITLES[n];
+        $("setupFill").style.width = Math.round((n / 4) * 100) + "%";
+      }
+      function startSetup(email) {
+        $("setupEmail").value = email || "";
+        $("setupPw").value = "";
+        $("setupName").value = "";
+        $("setupSchool").value = SCHOOLS[0];
+        $("setupSchoolCustom").value = "";
+        $("setupSchoolCustomWrap").style.display = "none";
+        $("setupDept").value = "";
+        setupRole = "研究生";
+        renderRoles();
+        setupError(1, ""); setupError(2, "");
+        showSetupStep(1);
+        show("setup");
+      }
+      function setupNext() {
+        if (setupStep === 1) {
+          const email = $("setupEmail").value.trim();
+          if (!email || !email.includes("@")) { setupError(1, "請輸入有效的 Email。"); return; }
+          if ($("setupPw").value.length < 8) { setupError(1, "密碼至少需要 8 個字元。"); return; }
+          setupError(1, "");
+          showSetupStep(2);
+        } else if (setupStep === 2) {
+          if (!$("setupName").value.trim()) { setupError(2, "請填寫稱呼後再繼續。"); return; }
+          setupError(2, "");
+          showSetupStep(3);
+        } else if (setupStep === 3) {
+          showSetupStep(4);
+        }
+      }
+      for (const b of document.querySelectorAll(".setup-next")) b.addEventListener("click", setupNext);
+      for (const b of document.querySelectorAll(".setup-back")) {
+        b.addEventListener("click", () => showSetupStep(Math.max(1, setupStep - 1)));
+      }
+      $("setupName").addEventListener("keydown", (e) => { if (e.key === "Enter") setupNext(); });
+      $("setupSchool").addEventListener("change", () => {
+        $("setupSchoolCustomWrap").style.display = $("setupSchool").value === "其他" ? "flex" : "none";
       });
-      $("joinBtn").addEventListener("click", () => {
+      $("finishSetup").addEventListener("click", async () => {
+        const email = $("setupEmail").value.trim().toLowerCase();
+        const name = $("setupName").value.trim();
+        if (!name) { setupError(2, "請填寫稱呼後再繼續。"); showSetupStep(2); return; }
+        const school = $("setupSchool").value === "其他" ? $("setupSchoolCustom").value.trim() : $("setupSchool").value;
+        $("finishSetup").disabled = true;
+        try {
+          const res = await fetch("/auth/register", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              email,
+              password: $("setupPw").value,
+              profile: { name, school, dept: $("setupDept").value.trim(), role: setupRole },
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setupError(1, data.error || "註冊失敗，請再試一次。");
+            showSetupStep(1);
+            return;
+          }
+          setToken(data.token);
+          ME = { email: data.email, profile: data.profile, sessions: data.sessions || [] };
+          location.hash = "#/";
+          route();
+        } catch {
+          setupError(1, "無法連線到伺服器，請稍後再試。");
+          showSetupStep(1);
+        } finally {
+          $("finishSetup").disabled = false;
+        }
+      });
+      $("backToLogin").addEventListener("click", () => show("login"));
+
+      // ---------- 設定彈窗 ----------
+      function openSettings() {
+        const p = currentProfile();
+        if (!p) return;
+        $("draftName").value = p.name || "";
+        $("draftSchool").value = p.school || "";
+        $("draftDept").value = p.dept || "";
+        $("draftRole").value = p.role || "";
+        renderThemeRow();
+        renderCiteToggle();
+        $("settingsOverlay").classList.add("open");
+      }
+      function closeSettings() { $("settingsOverlay").classList.remove("open"); }
+      function renderThemeRow() {
+        const opts = [["system", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]];
+        $("themeRow").innerHTML = opts.map(
+          ([k, lb]) => `<button type="button" class="${prefs.theme === k ? "on" : ""}" data-k="${k}">${lb}</button>`
+        ).join("");
+        for (const b of $("themeRow").querySelectorAll("button")) {
+          b.addEventListener("click", () => { prefs.theme = b.dataset.k; savePrefs(); applyPrefs(); renderThemeRow(); });
+        }
+      }
+      function renderCiteToggle() { $("citeToggle").classList.toggle("on", !!prefs.citePreview); }
+      $("citeToggle").addEventListener("click", () => {
+        prefs.citePreview = !prefs.citePreview;
+        savePrefs(); applyPrefs(); renderCiteToggle();
+      });
+      $("openSettings").addEventListener("click", openSettings);
+      $("closeSettings").addEventListener("click", closeSettings);
+      $("cancelSettings").addEventListener("click", closeSettings);
+      $("settingsOverlay").addEventListener("click", (e) => { if (e.target === $("settingsOverlay")) closeSettings(); });
+      $("saveSettings").addEventListener("click", async () => {
+        const p = currentProfile();
+        if (!p) return;
+        try {
+          const res = await authFetch("/auth/profile", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              profile: {
+                name: $("draftName").value.trim() || p.name,
+                school: $("draftSchool").value.trim(),
+                dept: $("draftDept").value.trim(),
+                role: $("draftRole").value.trim(),
+              },
+            }),
+          });
+          if (res.ok) ME.profile = ((await res.json()).profile) || ME.profile;
+        } catch {}
+        closeSettings();
+        renderSidebar();
+      });
+      $("logoutBtn").addEventListener("click", async () => {
+        try { await authFetch("/auth/logout", { method: "POST" }); } catch {}
+        clearToken();
+        ME = null;
+        closeSettings();
+        location.hash = "#/";
+        route();
+      });
+
+      // ---------- 入口頁 ----------
+      function createSession() {
+        const id = uuid();
+        rememberSession(id, { name: "新研讀 Session", role: "擁有者" });
+        location.hash = `#/s/${id}`;
+      }
+      $("newSession").addEventListener("click", createSession);
+      $("joinBtn").addEventListener("click", joinSession);
+      $("joinInput").addEventListener("keydown", (e) => { if (e.key === "Enter") joinSession(); });
+      function joinSession() {
         const raw = $("joinInput").value.trim();
         const m = raw.match(/([A-Za-z0-9-]{8,64})\s*$/);
         if (!m) { alert("看不懂這個連結或 ID"); return; }
+        $("joinInput").value = "";
+        rememberSession(m[1], sessionEntry(m[1]) ? {} : { name: "協作 Session", role: "成員" });
         location.hash = `#/s/${m[1]}`;
-      });
+      }
+
+      function renderHome() {
+        const list = knownSessions();
+        const p = currentProfile();
+        const initial = (p && p.name ? p.name : "？").slice(-1);
+        if (list.length === 0) {
+          $("homeBody").innerHTML = `
+            <div class="empty-hero">
+              <div class="plus">＋</div>
+              <div class="t">還沒有任何 Session</div>
+              <div class="d">建立一個 Session，上傳論文 PDF，就能開始與 AI 對話研讀文獻。</div>
+              <button class="btn-primary" id="emptyNew" style="margin-top:6px;font-size:13.5px;padding:11px 20px">建立第一個 Session</button>
+            </div>`;
+          $("emptyNew").addEventListener("click", createSession);
+          return;
+        }
+        $("homeBody").innerHTML = `<div class="sess-grid">${list
+          .map(
+            (s) => `
+          <div class="sess-card" data-id="${esc(s.id)}">
+            <div class="hd">
+              <span class="nm">${esc(s.name || "未命名 Session")}</span>
+              <span class="pill">${esc(s.role || "成員")}</span>
+            </div>
+            <div class="meta" data-meta="${esc(s.id)}">${s.papers != null ? `${s.papers} 篇論文 · ${s.chats} 個對話` : "…"}</div>
+            <div class="ft">
+              <span class="avatar-sm">${esc(initial)}</span>
+              <span style="display:flex;align-items:center;gap:8px">
+                <span class="tm">${timeAgo(s.lastUsed)}</span>
+                <button class="forget" title="從此裝置移除（不刪伺服器資料）">✕</button>
+              </span>
+            </div>
+          </div>`
+          )
+          .join("")}</div>`;
+        for (const card of document.querySelectorAll(".sess-card")) {
+          card.addEventListener("click", () => (location.hash = `#/s/${card.dataset.id}`));
+          card.querySelector(".forget").addEventListener("click", (e) => {
+            e.stopPropagation();
+            forgetSession(card.dataset.id);
+            renderHome();
+            renderSidebar();
+          });
+        }
+        // 背景更新每個 session 的論文/對話數
+        for (const s of list) refreshCounts(s.id);
+      }
+      async function refreshCounts(id) {
+        try {
+          const [pr, cr] = await Promise.all([authFetch(`/s/${id}/papers`), authFetch(`/s/${id}/chats`)]);
+          const papers = ((await pr.json()).papers || []).length;
+          const chats = ((await cr.json()).chats || []).length;
+          cacheCounts(id, { papers, chats });
+          const el = document.querySelector(`[data-meta="${CSS.escape(id)}"]`);
+          if (el) el.textContent = `${papers} 篇論文 · ${chats} 個對話`;
+        } catch {}
+      }
 
       // ---------- Session 主頁 ----------
-      async function enterSession() {
-        $("sidChip").textContent = SID.slice(0, 13) + "…";
+      function enterSession() {
+        const p = currentProfile();
+        $("sessName").textContent = sessionName(SID);
+        $("sessAvatar").textContent = (p && p.name ? p.name : "？").slice(-1);
+        $("inviteLink").textContent = `${location.origin}/#/s/${SID}`;
+        $("invitePop").classList.remove("open");
+        $("inviteBtn").classList.remove("on");
         loadChats();
         loadPapers();
       }
-
-      $("shareBtn").addEventListener("click", async () => {
+      $("crumbHome").addEventListener("click", () => (location.hash = "#/"));
+      $("renameBtn").addEventListener("click", () => {
+        const name = prompt("Session 名稱：", sessionName(SID));
+        if (name === null) return;
+        rememberSession(SID, { name: name.trim() || "未命名 Session" });
+        $("sessName").textContent = sessionName(SID);
+        renderSidebar();
+      });
+      $("inviteBtn").addEventListener("click", () => {
+        $("invitePop").classList.toggle("open");
+        $("inviteBtn").classList.toggle("on");
+      });
+      $("inviteClose").addEventListener("click", () => {
+        $("invitePop").classList.remove("open");
+        $("inviteBtn").classList.remove("on");
+      });
+      $("copyInvite").addEventListener("click", async () => {
         const url = `${location.origin}/#/s/${SID}`;
-        try {
-          await navigator.clipboard.writeText(url);
-          $("shareBtn").textContent = "已複製 ✓";
-          setTimeout(() => ($("shareBtn").textContent = "複製分享連結"), 1500);
-        } catch {
-          prompt("複製這個連結：", url);
-        }
+        try { await navigator.clipboard.writeText(url); } catch { prompt("複製這個連結：", url); return; }
+        $("copyInvite").textContent = "✓ 已複製";
+        $("copyInvite").classList.add("ok");
+        setTimeout(() => { $("copyInvite").textContent = "複製"; $("copyInvite").classList.remove("ok"); }, 1600);
       });
 
       async function loadChats() {
         try {
-          const res = await fetch(`/s/${SID}/chats`);
-          const data = await res.json();
-          const chats = data.chats || [];
-          $("chatList").innerHTML =
-            chats
-              .map(
-                (c) => `
-              <div class="chat-item" data-id="${esc(c.id)}">
-                <span class="t">💬 ${esc(c.title)}</span>
-                <span class="time">${timeAgo(c.updatedAt)}</span>
-                <button class="x" title="刪除聊天室">✕</button>
-              </div>`
-              )
-              .join("") ||
-            '<div style="color:var(--muted);font-size:14px">還沒有聊天室 — 開一間來提問吧。</div>';
-          for (const item of document.querySelectorAll(".chat-item")) {
-            item.addEventListener("click", () => (location.hash = `#/s/${SID}/c/${item.dataset.id}`));
-            item.querySelector(".x").addEventListener("click", async (e) => {
+          const res = await authFetch(`/s/${SID}/chats`);
+          const chats = (await res.json()).chats || [];
+          cacheCounts(SID, { chats: chats.length });
+          if (chats.length === 0) {
+            $("chatList").innerHTML = `
+              <div class="list-empty">
+                <div class="t">尚無對話</div>
+                <div class="d">上傳論文後，建立對話開始提問。</div>
+                <button class="btn-outline" id="emptyNewChat" style="margin-top:4px;font-size:12.5px;padding:7px 14px;border-radius:8px">建立第一個對話</button>
+              </div>`;
+            $("emptyNewChat").addEventListener("click", newChat);
+            return;
+          }
+          $("chatList").innerHTML = chats
+            .map(
+              (c) => `
+            <div class="chat-row" data-id="${esc(c.id)}">
+              <div class="r1">
+                <span class="nm">${esc(c.title)}</span>
+                <span class="rgt">
+                  <span class="tm">${timeAgo(c.updatedAt)}</span>
+                  <button class="del" title="刪除聊天室">✕</button>
+                </span>
+              </div>
+            </div>`
+            )
+            .join("");
+          for (const row of document.querySelectorAll(".chat-row")) {
+            row.addEventListener("click", () => (location.hash = `#/s/${SID}/c/${row.dataset.id}`));
+            row.querySelector(".del").addEventListener("click", async (e) => {
               e.stopPropagation();
               if (!confirm("刪除這個聊天室與其對話記錄？")) return;
-              await fetch(`/s/${SID}/chats/${item.dataset.id}`, { method: "DELETE" });
+              await authFetch(`/s/${SID}/chats/${row.dataset.id}`, { method: "DELETE" });
               loadChats();
             });
           }
         } catch {
-          $("chatList").innerHTML = '<div style="color:var(--danger)">無法載入聊天室清單</div>';
+          $("chatList").innerHTML = '<div class="list-empty"><div class="t" style="color:var(--danger)">無法載入聊天室清單</div></div>';
         }
       }
-
-      $("newChatBtn").addEventListener("click", async () => {
+      async function newChat() {
         const id = uuid();
-        await fetch(`/s/${SID}/chats`, {
+        await authFetch(`/s/${SID}/chats`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id }),
         });
         location.hash = `#/s/${SID}/c/${id}`;
-      });
+      }
+      $("newChatBtn").addEventListener("click", newChat);
 
       async function loadPapers() {
         try {
-          const res = await fetch(`/s/${SID}/papers`);
-          const data = await res.json();
-          const papers = data.papers || [];
-          $("paperCount").textContent = papers.length;
-          $("papersGrid").innerHTML =
-            papers
-              .map(
-                (p) => `
-              <div class="card paper-card" data-file="${esc(p.file)}">
-                <button class="del" title="刪除這篇論文">✕</button>
-                <h3>${esc(p.title)}</h3>
-                <div class="summary">${esc(p.summary || "（尚無摘要）")}</div>
-                <div class="expand-hint">點擊展開/收合摘要</div>
-              </div>`
-              )
-              .join("") ||
-            '<div style="color:var(--muted);font-size:14px">這個 Session 還沒有論文，上傳第一篇吧。</div>';
+          const res = await authFetch(`/s/${SID}/papers`);
+          const papers = (await res.json()).papers || [];
+          cacheCounts(SID, { papers: papers.length });
+          $("paperCount").textContent = `${papers.length} 篇`;
+          renderSidebar();
+          if (papers.length === 0) {
+            $("papersBody").innerHTML = `
+              <div class="lib-empty">
+                <div class="t">尚未上傳任何論文</div>
+                <div class="d">拖曳 PDF 到此區域，AI 會自動上傳並產生摘要卡片。</div>
+              </div>`;
+            return;
+          }
+          $("papersBody").innerHTML = `<div class="papers-grid">${papers
+            .map(
+              (p) => `
+            <div class="paper-card" data-file="${esc(p.file)}">
+              <div class="r1">
+                <span class="pill">PDF</span>
+                <span class="sp"></span>
+                <span class="file">${esc(p.file)}</span>
+                <button class="del" title="從論文庫刪除">✕</button>
+              </div>
+              <div class="ttl">${esc(p.title)}</div>
+              <div class="sum">${esc(p.summary || "（尚無摘要）")}</div>
+            </div>`
+            )
+            .join("")}</div>`;
           for (const card of document.querySelectorAll(".paper-card")) {
             card.addEventListener("click", () => card.classList.toggle("expanded"));
             card.querySelector(".del").addEventListener("click", async (e) => {
               e.stopPropagation();
-              const file = card.dataset.file;
-              if (!confirm(`確定要刪除「${card.querySelector("h3").textContent}」？無法復原。`)) return;
+              if (!confirm(`確定要刪除「${card.querySelector(".ttl").textContent}」？無法復原。`)) return;
               try {
-                const res = await fetch(`/s/${SID}/papers/` + encodeURIComponent(file), { method: "DELETE" });
+                const res = await authFetch(`/s/${SID}/papers/` + encodeURIComponent(card.dataset.file), { method: "DELETE" });
                 const out = await res.json();
                 if (!res.ok) throw new Error(out.error || "delete failed");
                 loadPapers();
@@ -436,14 +1352,14 @@
             });
           }
         } catch {
-          $("papersGrid").innerHTML = '<div style="color:var(--danger)">無法載入論文清單</div>';
+          $("papersBody").innerHTML = '<div class="lib-empty"><div class="t" style="color:var(--danger)">無法載入論文清單</div></div>';
         }
       }
 
       $("deleteSession").addEventListener("click", async () => {
         if (!confirm("確定刪除整個 Session？所有論文向量與聊天記錄都會移除，無法復原。")) return;
         try {
-          const res = await fetch(`/s/${SID}`, { method: "DELETE" });
+          const res = await authFetch(`/s/${SID}`, { method: "DELETE" });
           if (!res.ok) throw new Error("delete failed");
           forgetSession(SID);
           location.hash = "#/";
@@ -452,168 +1368,261 @@
         }
       });
 
-      // ---------- 上傳（XHR 進度條 + 拖曳 + 多檔佇列） ----------
-      function uploadFile(file, positionLabel) {
+      // ---------- 上傳（每檔一張進度卡 + 佇列 + 重試） ----------
+      let uploadItems = [];
+      let uploadBusy = false;
+      let uploadSeq = 1;
+      function renderUploads() {
+        $("uploadList").innerHTML = uploadItems
+          .map((u) => {
+            const statusLabel =
+              u.status === "error" ? `上傳失敗：${esc(u.errMsg || "無法解析")}`
+              : u.status === "done" ? "已完成 · 摘要已加入論文庫"
+              : u.status === "processing" ? "解析與嵌入中…（生成摘要需要一點時間）"
+              : u.status === "up" ? `${fmtSize(u.file.size)} · 上傳中…`
+              : `${fmtSize(u.file.size)} · 等待中`;
+            const right =
+              u.status === "error"
+                ? '<span class="acts"><span class="retry">重試</span><span class="rm">移除</span></span>'
+                : u.status === "done"
+                ? '<span class="ok-mark">✓</span>'
+                : u.status === "up"
+                ? `<span class="pct">${Math.round(u.progress)}%</span>`
+                : "";
+            const bar =
+              u.status === "up" || u.status === "error"
+                ? `<div class="track"><div class="fill" style="width:${Math.round(u.progress)}%"></div></div>`
+                : u.status === "processing"
+                ? '<div class="track"><div class="fill indeterminate"></div></div>'
+                : "";
+            return `
+            <div class="up-card ${u.status}${u.fading ? " fading" : ""}" data-id="${u.id}">
+              <div class="r1">
+                <span class="ic">PDF</span>
+                <div class="info">
+                  <span class="nm">${esc(u.file.name)}</span>
+                  <span class="st">${statusLabel}</span>
+                </div>
+                ${right}
+              </div>
+              ${bar}
+            </div>`;
+          })
+          .join("");
+        for (const card of $("uploadList").querySelectorAll(".up-card")) {
+          const id = Number(card.dataset.id);
+          const retry = card.querySelector(".retry");
+          const rm = card.querySelector(".rm");
+          if (retry) retry.addEventListener("click", () => retryUpload(id));
+          if (rm) rm.addEventListener("click", () => removeUpload(id));
+        }
+      }
+      function enqueueFiles(fileList) {
+        const pdfs = [...fileList].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+        if (pdfs.length === 0) { alert("只接受 PDF 檔案"); return; }
+        for (const f of pdfs) uploadItems.push({ id: uploadSeq++, file: f, status: "wait", progress: 0 });
+        renderUploads();
+        pumpUploads();
+      }
+      async function pumpUploads() {
+        if (uploadBusy) return;
+        uploadBusy = true;
+        let item;
+        while ((item = uploadItems.find((u) => u.status === "wait"))) {
+          await uploadOne(item);
+        }
+        uploadBusy = false;
+      }
+      function uploadOne(item) {
         return new Promise((resolve) => {
-          const wrap = $("progressWrap"), fill = $("progressFill"),
-                phase = $("progressPhase"), pct = $("progressPct"), result = $("uploadResult");
-          wrap.style.display = "block";
-          fill.classList.remove("indeterminate");
-          fill.style.width = "0%";
-          phase.textContent = `上傳中${positionLabel}：${file.name}`;
-          pct.textContent = "0%";
-
+          item.status = "up";
+          item.progress = 0;
+          renderUploads();
           const fd = new FormData();
-          fd.append("file", file);
+          fd.append("file", item.file);
           const xhr = new XMLHttpRequest();
           xhr.open("POST", `/s/${SID}/ingest`);
+          xhr.setRequestHeader("Authorization", `Bearer ${getToken()}`);
           xhr.upload.onprogress = (e) => {
             if (!e.lengthComputable) return;
-            const p = Math.round((e.loaded / e.total) * 100);
-            fill.style.width = p + "%";
-            pct.textContent = p + "%";
-            if (p >= 100) {
-              phase.textContent = `解析與嵌入中${positionLabel}…（生成摘要需要一點時間）`;
-              pct.textContent = "";
-              fill.classList.add("indeterminate");
-            }
+            item.progress = (e.loaded / e.total) * 100;
+            if (item.progress >= 100 && item.status === "up") item.status = "processing";
+            renderUploads();
           };
           xhr.onload = () => {
-            fill.classList.remove("indeterminate");
             try {
               const data = JSON.parse(xhr.responseText);
               if (xhr.status !== 200) throw new Error(data.error || "ingest failed");
-              appendUploadResult("ok", `✓ 已加入「${data.title}」（${data.added} 個片段）` +
-                (data.summary ? `\n　摘要：${data.summary.slice(0, 100)}…` : ""));
+              item.status = "done";
+              renderUploads();
               loadPapers();
+              setTimeout(() => { item.fading = true; renderUploads(); }, 1500);
+              setTimeout(() => removeUpload(item.id), 2300);
             } catch (err) {
-              appendUploadResult("err", `✗ ${file.name}：${err.message}`);
+              item.status = "error";
+              item.errMsg = err.message;
+              renderUploads();
             }
             resolve();
           };
           xhr.onerror = () => {
-            fill.classList.remove("indeterminate");
-            appendUploadResult("err", `✗ ${file.name}：網路錯誤`);
+            item.status = "error";
+            item.errMsg = "網路錯誤";
+            renderUploads();
             resolve();
           };
           xhr.send(fd);
         });
       }
-
-      function appendUploadResult(cls, text) {
-        const result = $("uploadResult");
-        const line = document.createElement("div");
-        line.className = cls;
-        line.textContent = text;
-        result.appendChild(line);
+      function retryUpload(id) {
+        const item = uploadItems.find((u) => u.id === id);
+        if (!item) return;
+        item.status = "wait";
+        item.progress = 0;
+        item.errMsg = "";
+        renderUploads();
+        pumpUploads();
       }
-
-      let uploading = false;
-      async function uploadFiles(fileList) {
-        const pdfs = [...fileList].filter(
-          (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name),
-        );
-        if (pdfs.length === 0) {
-          appendUploadResult("err", "✗ 只接受 PDF 檔案");
-          return;
-        }
-        if (uploading) {
-          appendUploadResult("err", "✗ 上一批還在處理中，請稍候");
-          return;
-        }
-        uploading = true;
-        $("uploadResult").innerHTML = "";
-        for (let i = 0; i < pdfs.length; i++) {
-          const label = pdfs.length > 1 ? `（${i + 1}/${pdfs.length}）` : "";
-          await uploadFile(pdfs[i], label);
-        }
-        $("progressWrap").style.display = "none";
-        uploading = false;
+      function removeUpload(id) {
+        uploadItems = uploadItems.filter((u) => u.id !== id);
+        renderUploads();
       }
-
       $("file").addEventListener("change", () => {
-        uploadFiles($("file").files);
+        enqueueFiles($("file").files);
         $("file").value = "";
       });
-
-      // 拖曳上傳
       const dropZone = $("dropZone");
       for (const evt of ["dragenter", "dragover"]) {
-        dropZone.addEventListener(evt, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropZone.classList.add("dragover");
-        });
+        dropZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropZone.classList.add("dragover"); });
       }
       for (const evt of ["dragleave", "drop"]) {
-        dropZone.addEventListener(evt, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dropZone.classList.remove("dragover");
-        });
+        dropZone.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); dropZone.classList.remove("dragover"); });
       }
       dropZone.addEventListener("drop", (e) => {
-        if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files);
+        if (e.dataTransfer?.files?.length) enqueueFiles(e.dataTransfer.files);
       });
-      // 防止拖到視窗其他地方時瀏覽器直接開啟 PDF
       window.addEventListener("dragover", (e) => e.preventDefault());
       window.addEventListener("drop", (e) => e.preventDefault());
 
       // ---------- 聊天室 ----------
+      // 引用原文快取：由 SSE meta 的 contexts 填入，供引用標籤的懸浮預覽使用。
+      const quoteCache = new Map();
+      const quoteKey = (title, page) => `${title}::${page}`;
+
+      function citeChip(c) {
+        const quote = quoteCache.get(quoteKey(c.title, c.page));
+        return `
+          <span class="cite">
+            <span class="tag">${esc(shortTitle(c.title))} · p.${esc(c.page)}</span>
+            <span class="cite-pop">
+              <span class="t">${esc(c.title)}</span>
+              ${quote ? `<span class="q">${esc(quote)}</span>` : ""}
+              <span class="p">第 ${esc(c.page)} 頁${quote ? " · 檢索到的原文段落" : ""}</span>
+            </span>
+          </span>`;
+      }
+      function shortTitle(t) {
+        return t.length > 28 ? t.slice(0, 28) + "…" : t;
+      }
+      function attachCitations(msgEl, citations) {
+        const old = msgEl.querySelector(".cites");
+        if (old) old.remove();
+        if (!citations || !citations.length) return;
+        const div = document.createElement("div");
+        div.className = "cites";
+        div.innerHTML = citations.map(citeChip).join("");
+        msgEl.querySelector(".bubble").appendChild(div);
+      }
       function addMessage(role, text, citations) {
-        const empty = $("log").querySelector(".empty");
+        const empty = $("logInner").querySelector(".chat-empty");
         if (empty) empty.remove();
         const wrap = document.createElement("div");
         wrap.className = "msg " + role;
-        wrap.innerHTML = `<div class="role">${role === "user" ? "你" : "Agent"}</div><div class="bubble"></div>`;
-        wrap.querySelector(".bubble").textContent = text;
+        wrap.innerHTML =
+          (role === "assistant" ? '<span class="ai-av">析</span>' : "") +
+          '<div class="bubble"><span class="txt"></span></div>';
+        wrap.querySelector(".txt").textContent = text;
         if (citations && citations.length) attachCitations(wrap, citations);
-        $("log").appendChild(wrap);
+        $("logInner").appendChild(wrap);
         $("log").scrollTop = $("log").scrollHeight;
         return wrap;
       }
-      function attachCitations(msgEl, citations) {
-        const div = document.createElement("div");
-        div.className = "cites";
-        div.innerHTML = citations.map((c) => `<span class="cite">${esc(c.title)} · p.${c.page}</span>`).join("");
-        msgEl.appendChild(div);
-      }
-      function showEmptyState() {
-        $("log").innerHTML = `
-          <div class="empty">
-            問任何關於這個 Session 論文庫的問題，<br />回答會即時串流並附上出處（論文 + 頁碼）。
+      function showEmptyChat() {
+        const suggestions = [
+          "這幾篇論文的核心貢獻分別是什麼？",
+          "比較各篇論文在方法上的異同",
+          "這些研究有哪些共同的限制與未來方向？",
+        ];
+        $("logInner").innerHTML = `
+          <div class="chat-empty">
+            <div class="logo">析</div>
+            <div class="t">開始與論文對話</div>
+            <div class="d">AI 已讀取此 Session 的論文，回答會附上論文標題與頁碼引用。</div>
+            <div class="sugg-row">${suggestions
+              .map((s) => `<button type="button">${esc(s)}</button>`)
+              .join("")}</div>
           </div>`;
+        for (const b of $("logInner").querySelectorAll(".sugg-row button")) {
+          b.addEventListener("click", () => sendMessage(b.textContent));
+        }
+      }
+      function showThinking() {
+        removeThinking();
+        const el = document.createElement("div");
+        el.className = "thinking";
+        el.id = "thinkingEl";
+        el.innerHTML = `
+          <span class="ai-av" style="flex:none;width:28px;height:28px;border-radius:9px;background:var(--primary-soft2);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;margin-bottom:2px">析</span>
+          <div class="box">
+            <span class="dots"><span></span><span></span><span></span></span>
+            <span class="lb">正在檢索論文段落…</span>
+          </div>`;
+        $("logInner").appendChild(el);
+        $("log").scrollTop = $("log").scrollHeight;
+      }
+      function removeThinking() {
+        const el = $("thinkingEl");
+        if (el) el.remove();
       }
 
       async function enterChat() {
-        $("backToSession").href = `#/s/${SID}`;
-        $("log").innerHTML = "";
+        $("logInner").innerHTML = "";
+        const entry = sessionEntry(SID) || {};
+        $("chatSub").textContent =
+          (entry.papers != null ? `引用 ${entry.papers} 篇論文 · ` : "") + sessionName(SID);
         try {
-          const res = await fetch(`/s/${SID}/chats/${CHAT_ID}`);
+          const res = await authFetch(`/s/${SID}/chats/${CHAT_ID}`);
           if (res.status === 404) {
-            // 直接開網址進來的新聊天室 → 建立
-            await fetch(`/s/${SID}/chats`, {
+            await authFetch(`/s/${SID}/chats`, {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ id: CHAT_ID }),
             });
             $("chatTitle").textContent = "新對話";
-            showEmptyState();
+            showEmptyChat();
             return;
           }
           const rec = await res.json();
           $("chatTitle").textContent = rec.title || "對話";
-          if (!rec.messages || rec.messages.length === 0) showEmptyState();
-          else for (const m of rec.messages) addMessage(m.role, m.content, m.citations);
+          if (!rec.messages || rec.messages.length === 0) showEmptyChat();
+          else {
+            for (const m of rec.messages) {
+              // 儲存的引用帶有原文段落 → 餵入 quoteCache，hover 預覽重整後仍可用
+              for (const c of m.citations || []) {
+                if (c.text) quoteCache.set(quoteKey(c.title, c.page), c.text);
+              }
+              addMessage(m.role, stripMarkdown(m.content), m.citations);
+            }
+          }
         } catch {
-          showEmptyState();
+          showEmptyChat();
         }
         $("input").focus();
       }
-
+      $("backToSession").addEventListener("click", () => (location.hash = `#/s/${SID}`));
       $("deleteChatBtn").addEventListener("click", async () => {
         if (!confirm("刪除這個聊天室與其對話記錄？")) return;
-        await fetch(`/s/${SID}/chats/${CHAT_ID}`, { method: "DELETE" });
+        await authFetch(`/s/${SID}/chats/${CHAT_ID}`, { method: "DELETE" });
         location.hash = `#/s/${SID}`;
       });
 
@@ -638,24 +1647,21 @@
         }
       }
 
-      $("chatForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const message = $("input").value.trim();
-        if (!message) return;
+      let sending = false;
+      async function sendMessage(textOverride) {
+        const message = (typeof textOverride === "string" ? textOverride : $("input").value).trim();
+        if (!message || sending) return;
+        sending = true;
         addMessage("user", message);
         $("input").value = "";
         $("send").disabled = true;
-
-        const msgEl = addMessage("assistant", "");
-        const bubble = msgEl.querySelector(".bubble");
-        const cursor = document.createElement("span");
-        cursor.className = "cursor";
-        bubble.appendChild(cursor);
+        showThinking();
 
         let answer = "";
         let citations = [];
+        let msgEl = null, txtEl = null, cursor = null;
         try {
-          const res = await fetch(`/s/${SID}/chat`, {
+          const res = await authFetch(`/s/${SID}/chat`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ chatId: CHAT_ID, message }),
@@ -665,39 +1671,68 @@
             throw new Error(err.error || "request failed (" + res.status + ")");
           }
           await readSse(res, {
-            meta: (d) => { citations = d.citations || []; },
+            meta: (d) => {
+              citations = d.citations || [];
+              for (const ctx of d.contexts || []) {
+                const k = quoteKey(ctx.title, ctx.page);
+                if (!quoteCache.has(k)) quoteCache.set(k, ctx.text);
+              }
+            },
             delta: (d) => {
+              if (!msgEl) {
+                removeThinking();
+                msgEl = addMessage("assistant", "");
+                txtEl = msgEl.querySelector(".txt");
+                cursor = document.createElement("span");
+                cursor.className = "cursor";
+                txtEl.after(cursor);
+              }
               answer += d.text;
-              bubble.textContent = stripMarkdown(answer);
-              bubble.appendChild(cursor);
+              txtEl.textContent = stripMarkdown(answer);
               $("log").scrollTop = $("log").scrollHeight;
             },
             error: (d) => { throw new Error(d.message || "stream error"); },
           });
-          cursor.remove();
-          bubble.textContent = stripMarkdown(answer) || "（沒有收到回答）";
+          removeThinking();
+          if (!msgEl) {
+            msgEl = addMessage("assistant", "");
+            txtEl = msgEl.querySelector(".txt");
+          }
+          if (cursor) cursor.remove();
+          txtEl.textContent = stripMarkdown(answer) || "（沒有收到回答）";
           if (citations.length) attachCitations(msgEl, citations);
           if ($("chatTitle").textContent === "新對話") {
             $("chatTitle").textContent = message.slice(0, 30);
+            loadChats().catch(() => {});
           }
         } catch (err) {
-          cursor.remove();
-          bubble.textContent = "錯誤：" + err.message;
+          removeThinking();
+          if (cursor) cursor.remove();
+          if (!msgEl) msgEl = addMessage("assistant", "");
+          msgEl.querySelector(".txt").textContent = "錯誤：" + err.message;
         } finally {
+          sending = false;
           $("send").disabled = false;
           $("input").focus();
         }
-      });
-
-      $("input").addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          $("chatForm").requestSubmit();
-        }
-      });
+      }
+      $("send").addEventListener("click", () => sendMessage());
+      $("input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
 
       // ---------- 啟動 ----------
-      route();
+      applyPrefs();
+      (async () => {
+        if (getToken()) {
+          try {
+            const res = await authFetch("/auth/me");
+            if (res.ok) {
+              const me = await res.json();
+              ME = { email: me.email, profile: me.profile, sessions: me.sessions || [] };
+            }
+          } catch {}
+        }
+        route();
+      })();
     </script>
   </body>
 </html>

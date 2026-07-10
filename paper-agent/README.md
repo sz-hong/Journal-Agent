@@ -10,16 +10,25 @@ Capabilities:
 - **Agentic multi-query retrieval** — each question is rewritten (using server-side chat history) into 1–3 standalone English search queries; retrieval is session-filtered, merged, deduped.
 - **Read a new paper** — upload a PDF (real upload progress bar); parsed, embedded, **auto-summarized in Traditional Chinese**.
 - **Delete** — per paper, per chat room, or the whole session (vectors + KV).
+- **Server-side accounts** — register/login on the Worker (PBKDF2-SHA256 password hashes, bearer tokens in KV, 30-day TTL). All session APIs require a token; your session list follows your account across devices. No password reset in v1.
+- **析讀 AI UI** — sidebar layout, light/dark/system theme, hover previews of the retrieved passage on citation chips (persisted with each answer, so they survive reloads).
 
 ## Architecture
 
 ```
-Browser (public/index.html — 3-view SPA: #/ entry · #/s/{sid} session home · #/s/{sid}/c/{chatId} chat)
-   │ fetch / SSE
-Cloudflare Worker (Hono, src/index.ts) — all routes session-scoped under /s/:sid
+Browser (public/index.html — "析讀 AI" SPA: server login/registration (pa-token in localStorage) ·
+         #/ session overview · #/s/{sid} session home · #/s/{sid}/c/{chatId} chat; sidebar + settings)
+   │ fetch / SSE (Authorization: Bearer <token>)
+Cloudflare Worker (Hono, src/index.ts)
+   ├── POST   /auth/register|login    PBKDF2 verify → issue KV-backed bearer token
+   ├── POST   /auth/logout            revoke token        GET /auth/me   profile + my sessions
+   ├── PUT    /auth/profile           update profile
+   ├── POST   /me/sessions            upsert my session list   DELETE /me/sessions/:id  remove entry
+   ├── (everything below requires a valid Bearer token — 401 otherwise)
    ├── POST   /s/:sid/chat            {chatId, message} → history from KV → plan queries →
    │                                  embed×N → Vectorize (filter session_id) → merge →
    │                                  SSE meta{citations} → delta* → done; turn persisted to KV
+   │                                  (stored citations carry the quoted passage for hover restore)
    ├── GET    /s/:sid/chats           list chat rooms   POST /s/:sid/chats  create (client uuid)
    ├── GET    /s/:sid/chats/:chatId   full messages     DELETE …/chats/:chatId  remove
    ├── POST   /s/:sid/ingest          upload PDF → chunk → embed → zh-Hant summary →
@@ -28,7 +37,8 @@ Cloudflare Worker (Hono, src/index.ts) — all routes session-scoped under /s/:s
    └── DELETE /s/:sid                 wipe the whole session (vectors + KV keys)
 Bindings: VECTORIZE · PAPERS_KV · ASSETS   Secret: OPENAI_API_KEY
 Models: text-embedding-3-large (truncated to 1536 dims — Vectorize max) · gpt-5.4 (wrangler.jsonc vars)
-KV keys: s:{sid}:paper:{file} → {title, summary, chunkIds} · s:{sid}:chat:{chatId} → {title, timestamps, messages}
+KV keys: user:{email} → {pwHash, salt, iterations, profile, sessions[]} · tok:{token} → email (TTL 30d)
+         s:{sid}:paper:{file} → {title, summary, chunkIds} · s:{sid}:chat:{chatId} → {title, timestamps, messages}
 ```
 
 Only OpenAI calls are billed (embeddings + generation). Cloudflare Vectorize/KV/Workers have free-tier allowances.
@@ -92,7 +102,7 @@ paper-agent/
 │   ├── pdf.ts          unpdf per-page text extraction
 │   └── types.ts        Env + shared types
 ├── scripts/ingest.ts   local bulk ingest into a session (--session <sid>)
-├── public/index.html   3-view SPA (entry · session home · chat room)
+├── public/index.html   "析讀 AI" SPA (login/setup · session overview · session home · chat room)
 └── test/*.test.ts      TDD suite (pure units + mocked Worker routes)
 ```
 

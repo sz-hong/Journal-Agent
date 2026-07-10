@@ -1,26 +1,40 @@
 import { Hono } from "hono";
-import type { Env, ChatMessage, Citation } from "./types";
+import type { Env, ChatMessage, Citation, UserProfile } from "./types";
 import { embedQuery, embedTexts, chat, chatStream } from "./openai";
 import { queryContexts, mergeContexts } from "./retrieval";
 import { buildChatMessages } from "./prompt";
-import { extractCitations } from "./citations";
+import { extractCitations, attachQuotes } from "./citations";
 import { extractPdfPages } from "./pdf";
 import { buildVectorRecords } from "./ingest-core";
 import { planQueries } from "./plan";
 import { summarizePaper } from "./summary";
 import { parseManifest } from "./manifest";
 import { chatKey, chatPrefix, newChat, loadChat, appendMessages, listChats } from "./chats";
+import {
+  hashPassword,
+  verifyPassword,
+  issueToken,
+  resolveToken,
+  revokeToken,
+  getUser,
+  putUser,
+  upsertUserSession,
+  removeUserSession,
+} from "./auth";
 
 const PER_QUERY_K = 5;
 const DELETE_BATCH = 1000;
 const HISTORY_WINDOW = 8;
 const SID_RE = /^[A-Za-z0-9-]{8,64}$/;
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LEN = 8;
 
 const paperKey = (sid: string, file: string) => `s:${sid}:paper:${file}`;
 const paperPrefix = (sid: string) => `s:${sid}:paper:`;
 
-const app = new Hono<{ Bindings: Env; Variables: { sid: string } }>();
+type Vars = { sid: string; email: string; token: string };
+const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 /** Surface unhandled errors as JSON so the UI (and debugging) sees the cause. */
 app.onError((err, c) => {
@@ -28,18 +42,135 @@ app.onError((err, c) => {
   return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
 });
 
-/** Validate the session id once for every session-scoped route. */
-app.use("/s/:sid/*", async (c, next) => {
+/** Resolve the Bearer token to an email; null when missing/invalid. */
+async function authenticate(
+  c: { env: Env; req: { header(name: string): string | undefined } },
+): Promise<{ email: string; token: string } | null> {
+  const header = c.req.header("Authorization") ?? "";
+  const m = header.match(/^Bearer\s+(.+)$/i);
+  if (!m) return null;
+  const email = await resolveToken(c.env, m[1]);
+  return email ? { email, token: m[1] } : null;
+}
+
+/** Guard: valid session id + authenticated user for every /s/… route. */
+const sessionGuard = async (c: any, next: () => Promise<void>) => {
   const sid = c.req.param("sid");
   if (!SID_RE.test(sid)) return c.json({ error: "invalid session id" }, 400);
+  const auth = await authenticate(c);
+  if (!auth) return c.json({ error: "unauthorized" }, 401);
   c.set("sid", sid);
+  c.set("email", auth.email);
+  c.set("token", auth.token);
   await next();
+};
+app.use("/s/:sid/*", sessionGuard);
+app.use("/s/:sid", sessionGuard);
+
+/** Guard for account routes that require a login. */
+const authGuard = async (c: any, next: () => Promise<void>) => {
+  const auth = await authenticate(c);
+  if (!auth) return c.json({ error: "unauthorized" }, 401);
+  c.set("email", auth.email);
+  c.set("token", auth.token);
+  await next();
+};
+app.use("/me/*", authGuard);
+
+// ---------- 帳號 ----------
+
+function sanitizeProfile(p: Partial<UserProfile> | undefined): UserProfile {
+  return {
+    name: (p?.name ?? "").toString().trim().slice(0, 50),
+    school: (p?.school ?? "").toString().trim().slice(0, 100),
+    dept: (p?.dept ?? "").toString().trim().slice(0, 100),
+    role: (p?.role ?? "").toString().trim().slice(0, 30),
+  };
+}
+
+/** Register a new account and sign in. */
+app.post("/auth/register", async (c) => {
+  const { email, password, profile } = await c.req.json<{
+    email?: string;
+    password?: string;
+    profile?: Partial<UserProfile>;
+  }>();
+  const normEmail = (email ?? "").trim().toLowerCase();
+  if (!EMAIL_RE.test(normEmail)) return c.json({ error: "請輸入有效的電子信箱" }, 400);
+  if (!password || password.length < MIN_PASSWORD_LEN) {
+    return c.json({ error: `密碼至少需要 ${MIN_PASSWORD_LEN} 個字元` }, 400);
+  }
+  if (await getUser(c.env, normEmail)) {
+    return c.json({ error: "這個信箱已經註冊過了，請直接登入" }, 409);
+  }
+  const { hash, salt, iterations } = await hashPassword(password);
+  const user = {
+    pwHash: hash,
+    salt,
+    iterations,
+    profile: sanitizeProfile(profile),
+    sessions: [],
+    createdAt: Date.now(),
+  };
+  await putUser(c.env, normEmail, user);
+  const token = await issueToken(c.env, normEmail);
+  return c.json({ token, email: normEmail, profile: user.profile, sessions: [] });
 });
-app.use("/s/:sid", async (c, next) => {
-  const sid = c.req.param("sid");
-  if (!SID_RE.test(sid)) return c.json({ error: "invalid session id" }, 400);
-  c.set("sid", sid);
-  await next();
+
+/** Log in with email + password. */
+app.post("/auth/login", async (c) => {
+  const { email, password } = await c.req.json<{ email?: string; password?: string }>();
+  const normEmail = (email ?? "").trim().toLowerCase();
+  const user = await getUser(c.env, normEmail);
+  // Same error for unknown email and wrong password — no account enumeration.
+  if (!user || !password || !(await verifyPassword(password, user.salt, user.pwHash, user.iterations))) {
+    return c.json({ error: "帳號或密碼錯誤" }, 401);
+  }
+  const token = await issueToken(c.env, normEmail);
+  return c.json({ token, email: normEmail, profile: user.profile, sessions: user.sessions });
+});
+
+/** Log out: revoke the presented token. */
+app.post("/auth/logout", authGuard, async (c) => {
+  await revokeToken(c.env, c.get("token"));
+  return c.json({ ok: true });
+});
+
+/** Current account: profile + server-side session list. */
+app.get("/auth/me", authGuard, async (c) => {
+  const email = c.get("email");
+  const user = await getUser(c.env, email);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  return c.json({ email, profile: user.profile, sessions: user.sessions });
+});
+
+/** Update profile fields. */
+app.put("/auth/profile", authGuard, async (c) => {
+  const email = c.get("email");
+  const user = await getUser(c.env, email);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  const { profile } = await c.req.json<{ profile?: Partial<UserProfile> }>();
+  user.profile = sanitizeProfile({ ...user.profile, ...profile });
+  await putUser(c.env, email, user);
+  return c.json({ profile: user.profile });
+});
+
+/** Upsert a session into my list (create/visit/join/rename). */
+app.post("/me/sessions", async (c) => {
+  const { id, name, role } = await c.req.json<{ id?: string; name?: string; role?: string }>();
+  if (!id || !SID_RE.test(id)) return c.json({ error: "a valid session id is required" }, 400);
+  const sessions = await upsertUserSession(c.env, c.get("email"), {
+    id,
+    name: name?.toString().trim().slice(0, 60) || undefined,
+    role: role?.toString().trim().slice(0, 20) || undefined,
+  });
+  return c.json({ sessions: sessions ?? [] });
+});
+
+/** Remove a session from my list (server data stays). */
+app.delete("/me/sessions/:id", async (c) => {
+  const sessions = await removeUserSession(c.env, c.get("email"), c.req.param("id"));
+  return c.json({ sessions: sessions ?? [] });
 });
 
 /**
@@ -79,10 +210,11 @@ app.post("/s/:sid/chat", async (c) => {
   const citations = extractCitations(contexts);
   const messages = buildChatMessages(message, contexts, history);
 
+  // Stored citations carry the retrieved passage so hover previews survive reload.
   const persistTurn = async (answer: string, cites: Citation[]) => {
     await appendMessages(c.env, sid, chatId, [
       { role: "user", content: message },
-      { role: "assistant", content: answer, citations: cites },
+      { role: "assistant", content: answer, citations: attachQuotes(cites, contexts) },
     ]);
   };
 

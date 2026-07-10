@@ -70,6 +70,12 @@ export interface RetrievedContext {
 export interface Citation {
   title: string;
   page: number;
+  /**
+   * Retrieved passage backing this citation (truncated). Present on stored
+   * chat messages so the UI's hover preview survives a reload; omitted in
+   * live SSE meta (the full contexts ride alongside there).
+   */
+  text?: string;
 }
 
 /** KV manifest value (stored as JSON) describing one ingested paper. */
@@ -79,6 +85,35 @@ export interface PaperManifest {
   summary: string;
   /** Vector ids of every chunk, recorded so the paper can be deleted. */
   chunkIds: string[];
+}
+
+/** User-editable profile fields captured at registration / in settings. */
+export interface UserProfile {
+  name: string;
+  school: string;
+  dept: string;
+  role: string;
+}
+
+/** One entry in a user's server-side session list. */
+export interface UserSessionRef {
+  id: string;
+  name: string;
+  /** Display role within that session, e.g. "擁有者" / "成員". */
+  role: string;
+  lastUsed: number;
+}
+
+/** KV user record (key user:{email}, stored as JSON). */
+export interface UserRecord {
+  /** PBKDF2-SHA256 hash (base64url). */
+  pwHash: string;
+  /** Per-user random salt (base64url). */
+  salt: string;
+  iterations: number;
+  profile: UserProfile;
+  sessions: UserSessionRef[];
+  createdAt: number;
 }
 
 /** One message stored in a chat record (citations kept for UI restore only). */

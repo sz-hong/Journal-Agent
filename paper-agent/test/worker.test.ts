@@ -8,6 +8,9 @@ import app from "../src/index";
 
 const SID = "11111111-aaaa-bbbb-cccc-222222222222";
 const OTHER_SID = "99999999-dddd-eeee-ffff-000000000000";
+const TEST_EMAIL = "u@test.tw";
+const TEST_TOKEN = "test-token-abcdefghijklmnopqrstuvwxyz";
+const AUTH = { Authorization: `Bearer ${TEST_TOKEN}` };
 
 const matches = [
   {
@@ -108,7 +111,19 @@ const LAWS_MANIFEST = JSON.stringify({
   chunkIds: ["h1::p1::c0", "h1::p2::c0"],
 });
 
+const TEST_USER = JSON.stringify({
+  pwHash: "unused",
+  salt: "unused",
+  iterations: 1,
+  profile: { name: "測試", school: "台大", dept: "資工", role: "研究生" },
+  sessions: [],
+  createdAt: 1,
+});
+
 function makeEnv(kv = makeKv()): Env & { KV: ReturnType<typeof makeKv> } {
+  // seed the authenticated test user + its bearer token
+  kv.store.set(`tok:${TEST_TOKEN}`, { value: TEST_EMAIL });
+  if (!kv.store.has(`user:${TEST_EMAIL}`)) kv.store.set(`user:${TEST_EMAIL}`, { value: TEST_USER });
   return {
     KV: kv,
     OPENAI_API_KEY: "sk-test",
@@ -127,6 +142,197 @@ function makeEnv(kv = makeKv()): Env & { KV: ReturnType<typeof makeKv> } {
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
 
+// ---------- 帳號 ----------
+
+describe("auth: register / login / me / profile / logout", () => {
+  it("registers, then logs in with the same password", async () => {
+    const env = makeEnv();
+    let res = await app.fetch(
+      new Request("http://x/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "New@Example.com",
+          password: "hunter22222",
+          profile: { name: "小明", school: "台大", dept: "資工", role: "研究生" },
+        }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    const reg = (await res.json()) as any;
+    expect(reg.token).toBeTruthy();
+    expect(reg.email).toBe("new@example.com"); // normalized
+    expect(reg.profile.name).toBe("小明");
+
+    res = await app.fetch(
+      new Request("http://x/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "new@example.com", password: "hunter22222" }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any).token).toBeTruthy();
+  });
+
+  it("409s on duplicate registration and 400s on short passwords / bad email", async () => {
+    const env = makeEnv();
+    const reg = (body: object) =>
+      app.fetch(
+        new Request("http://x/auth/register", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        env,
+        ctx,
+      );
+    expect((await reg({ email: TEST_EMAIL, password: "longenough1" })).status).toBe(409);
+    expect((await reg({ email: "a@b.c", password: "short" })).status).toBe(400);
+    expect((await reg({ email: "not-an-email", password: "longenough1" })).status).toBe(400);
+  });
+
+  it("401s a wrong password with the same message as an unknown account", async () => {
+    const env = makeEnv();
+    await app.fetch(
+      new Request("http://x/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "a@b.c", password: "correct-pw-1" }),
+      }),
+      env,
+      ctx,
+    );
+    const login = (body: object) =>
+      app.fetch(
+        new Request("http://x/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        env,
+        ctx,
+      );
+    const wrong = await login({ email: "a@b.c", password: "wrong-pw-11" });
+    const unknown = await login({ email: "no@one.tw", password: "whatever-11" });
+    expect(wrong.status).toBe(401);
+    expect(unknown.status).toBe(401);
+    expect(((await wrong.json()) as any).error).toBe(((await unknown.json()) as any).error);
+  });
+
+  it("GET /auth/me returns profile + sessions with a valid token; 401 without", async () => {
+    const env = makeEnv();
+    let res = await app.fetch(new Request("http://x/auth/me", { headers: AUTH }), env, ctx);
+    expect(res.status).toBe(200);
+    const me = (await res.json()) as any;
+    expect(me.email).toBe(TEST_EMAIL);
+    expect(me.profile.name).toBe("測試");
+
+    res = await app.fetch(new Request("http://x/auth/me"), env, ctx);
+    expect(res.status).toBe(401);
+  });
+
+  it("PUT /auth/profile merges fields", async () => {
+    const env = makeEnv();
+    const res = await app.fetch(
+      new Request("http://x/auth/profile", {
+        method: "PUT",
+        headers: { ...AUTH, "content-type": "application/json" },
+        body: JSON.stringify({ profile: { dept: "電機" } }),
+      }),
+      env,
+      ctx,
+    );
+    const data = (await res.json()) as any;
+    expect(data.profile.dept).toBe("電機");
+    expect(data.profile.name).toBe("測試"); // untouched fields preserved
+  });
+
+  it("logout revokes the token", async () => {
+    const env = makeEnv();
+    let res = await app.fetch(new Request("http://x/auth/logout", { method: "POST", headers: AUTH }), env, ctx);
+    expect(res.status).toBe(200);
+    res = await app.fetch(new Request("http://x/auth/me", { headers: AUTH }), env, ctx);
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("auth: /me/sessions list sync", () => {
+  it("upserts (create/rename/revisit) and removes sessions", async () => {
+    const env = makeEnv();
+    const post = (body: object) =>
+      app.fetch(
+        new Request("http://x/me/sessions", {
+          method: "POST",
+          headers: { ...AUTH, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+        env,
+        ctx,
+      );
+
+    await post({ id: SID, name: "我的研讀", role: "擁有者" });
+    await post({ id: OTHER_SID, name: "協作", role: "成員" });
+    let data = (await (await post({ id: SID })).json()) as any; // revisit: moves to front, keeps name
+    expect(data.sessions.map((s: any) => s.id)).toEqual([SID, OTHER_SID]);
+    expect(data.sessions[0].name).toBe("我的研讀");
+
+    const res = await app.fetch(
+      new Request(`http://x/me/sessions/${OTHER_SID}`, { method: "DELETE", headers: AUTH }),
+      env,
+      ctx,
+    );
+    data = (await res.json()) as any;
+    expect(data.sessions.map((s: any) => s.id)).toEqual([SID]);
+  });
+
+  it("401s without a token", async () => {
+    const res = await app.fetch(
+      new Request("http://x/me/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: SID }),
+      }),
+      makeEnv(),
+      ctx,
+    );
+    expect(res.status).toBe(401);
+  });
+});
+
+// ---------- 守門 ----------
+
+describe("session route guard", () => {
+  it("401s /s/* without a token (papers, chat, ingest, delete)", async () => {
+    const env = makeEnv();
+    for (const req of [
+      new Request(`http://x/s/${SID}/papers`),
+      new Request(`http://x/s/${SID}/chat`, { method: "POST", body: "{}" }),
+      new Request(`http://x/s/${SID}/ingest`, { method: "POST" }),
+      new Request(`http://x/s/${SID}`, { method: "DELETE" }),
+    ]) {
+      const res = await app.fetch(req, env, ctx);
+      expect(res.status).toBe(401);
+    }
+  });
+
+  it("400s on a malformed session id (before auth)", async () => {
+    const res = await app.fetch(new Request("http://x/s/ab/papers", { headers: AUTH }), makeEnv(), ctx);
+    expect(res.status).toBe(400);
+  });
+
+  it("serves the static UI without auth", async () => {
+    const res = await app.fetch(new Request("http://x/"), makeEnv(), ctx);
+    expect(res.status).toBe(200);
+  });
+});
+
+// ---------- 資料路由（帶 token） ----------
+
 describe("error surfacing", () => {
   it("returns the underlying error message as JSON on unhandled failures", async () => {
     installOpenAiMock();
@@ -135,7 +341,7 @@ describe("error surfacing", () => {
     const res = await app.fetch(
       new Request(`http://x/s/${SID}/chat`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...AUTH, "content-type": "application/json" },
         body: JSON.stringify({ chatId: "c1", message: "q", stream: false }),
       }),
       env,
@@ -146,13 +352,6 @@ describe("error surfacing", () => {
   });
 });
 
-describe("session id validation", () => {
-  it("400s on a malformed session id", async () => {
-    const res = await app.fetch(new Request("http://x/s/ab/papers"), makeEnv(), ctx);
-    expect(res.status).toBe(400);
-  });
-});
-
 describe("GET /s/:sid/papers", () => {
   it("lists only this session's papers, with summaries", async () => {
     const kv = makeKv({
@@ -160,7 +359,7 @@ describe("GET /s/:sid/papers", () => {
       [paperKey(OTHER_SID, "other.pdf")]: { value: JSON.stringify({ title: "X", summary: "", chunkIds: [] }) },
       [chatKey(SID, "c1")]: { value: JSON.stringify({ title: "t", createdAt: 1, updatedAt: 1, messages: [] }) },
     });
-    const res = await app.fetch(new Request(`http://x/s/${SID}/papers`), makeEnv(kv), ctx);
+    const res = await app.fetch(new Request(`http://x/s/${SID}/papers`, { headers: AUTH }), makeEnv(kv), ctx);
     const data = (await res.json()) as any;
     expect(data.papers).toEqual([
       { file: "laws.pdf", title: "Lynch (2024)", summary: "本文探討人臉辨識監管。" },
@@ -168,7 +367,7 @@ describe("GET /s/:sid/papers", () => {
   });
 
   it("returns an empty list for a brand-new session", async () => {
-    const res = await app.fetch(new Request(`http://x/s/${SID}/papers`), makeEnv(), ctx);
+    const res = await app.fetch(new Request(`http://x/s/${SID}/papers`, { headers: AUTH }), makeEnv(), ctx);
     expect(((await res.json()) as any).papers).toEqual([]);
   });
 });
@@ -181,7 +380,11 @@ describe("POST /s/:sid/ingest", () => {
 
     const form = new FormData();
     form.append("file", new File([new Uint8Array([1, 2, 3])], "newpaper.pdf", { type: "application/pdf" }));
-    const res = await app.fetch(new Request(`http://x/s/${SID}/ingest`, { method: "POST", body: form }), env, ctx);
+    const res = await app.fetch(
+      new Request(`http://x/s/${SID}/ingest`, { method: "POST", headers: AUTH, body: form }),
+      env,
+      ctx,
+    );
 
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
@@ -200,11 +403,10 @@ describe("chat rooms CRUD", () => {
   it("creates, lists (session-scoped), reads, and deletes chats", async () => {
     const env = makeEnv();
 
-    // create
     let res = await app.fetch(
       new Request(`http://x/s/${SID}/chats`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...AUTH, "content-type": "application/json" },
         body: JSON.stringify({ id: "chat-1" }),
       }),
       env,
@@ -213,35 +415,32 @@ describe("chat rooms CRUD", () => {
     expect(res.status).toBe(200);
     expect(((await res.json()) as any).title).toBe("新對話");
 
-    // other session's chat must not leak into the list
     env.KV.store.set(chatKey(OTHER_SID, "foreign"), {
       value: JSON.stringify({ title: "x", createdAt: 1, updatedAt: 1, messages: [] }),
       metadata: { title: "x", updatedAt: 1 },
     });
 
-    res = await app.fetch(new Request(`http://x/s/${SID}/chats`), env, ctx);
+    res = await app.fetch(new Request(`http://x/s/${SID}/chats`, { headers: AUTH }), env, ctx);
     const list = (await res.json()) as any;
     expect(list.chats).toHaveLength(1);
     expect(list.chats[0].id).toBe("chat-1");
 
-    // read full record
-    res = await app.fetch(new Request(`http://x/s/${SID}/chats/chat-1`), env, ctx);
+    res = await app.fetch(new Request(`http://x/s/${SID}/chats/chat-1`, { headers: AUTH }), env, ctx);
     expect(((await res.json()) as any).messages).toEqual([]);
 
-    // delete
-    res = await app.fetch(new Request(`http://x/s/${SID}/chats/chat-1`, { method: "DELETE" }), env, ctx);
+    res = await app.fetch(new Request(`http://x/s/${SID}/chats/chat-1`, { method: "DELETE", headers: AUTH }), env, ctx);
     expect(res.status).toBe(200);
     expect(env.KV.store.has(chatKey(SID, "chat-1"))).toBe(false);
   });
 
   it("404s reading a missing chat", async () => {
-    const res = await app.fetch(new Request(`http://x/s/${SID}/chats/nope`), makeEnv(), ctx);
+    const res = await app.fetch(new Request(`http://x/s/${SID}/chats/nope`, { headers: AUTH }), makeEnv(), ctx);
     expect(res.status).toBe(404);
   });
 });
 
 describe("POST /s/:sid/chat", () => {
-  it("uses KV history, retrieves with the session filter, answers, and persists the turn", async () => {
+  it("uses KV history, retrieves with the session filter, answers, and persists the turn with quote-bearing citations", async () => {
     const fetchMock = installOpenAiMock({ answer: "grounded answer", queries: ["q1"] });
     const kv = makeKv({
       [chatKey(SID, "chat-1")]: {
@@ -262,7 +461,7 @@ describe("POST /s/:sid/chat", () => {
     const res = await app.fetch(
       new Request(`http://x/s/${SID}/chat`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...AUTH, "content-type": "application/json" },
         body: JSON.stringify({ chatId: "chat-1", message: "follow-up?", stream: false }),
       }),
       env,
@@ -273,11 +472,9 @@ describe("POST /s/:sid/chat", () => {
     const data = (await res.json()) as any;
     expect(data.answer).toBe("grounded answer");
 
-    // retrieval was session-filtered
     const queryOpts = (env.VECTORIZE.query as any).mock.calls[0][1];
     expect(queryOpts.filter).toEqual({ session_id: SID });
 
-    // planner saw the stored history
     const plannerCall = fetchMock.mock.calls.find(([u, i]: any[]) => {
       if (!String(u).includes("/chat/completions")) return false;
       const b = JSON.parse(i.body);
@@ -285,13 +482,12 @@ describe("POST /s/:sid/chat", () => {
     });
     expect(JSON.stringify(JSON.parse((plannerCall![1] as any).body).messages)).toContain("earlier question");
 
-    // the turn was persisted (2 old + user + assistant)
     const rec = JSON.parse(kv.store.get(chatKey(SID, "chat-1"))!.value);
     expect(rec.messages).toHaveLength(4);
     expect(rec.messages[2]).toMatchObject({ role: "user", content: "follow-up?" });
     expect(rec.messages[3].role).toBe("assistant");
-    expect(rec.messages[3].content).toBe("grounded answer");
-    expect(rec.messages[3].citations.length).toBeGreaterThan(0);
+    // stored citations carry the retrieved passage for hover restore
+    expect(rec.messages[3].citations[0].text).toBe("EU AI Act regulates live FRT.");
   });
 
   it("streams SSE by default and persists after done", async () => {
@@ -301,7 +497,7 @@ describe("POST /s/:sid/chat", () => {
     const res = await app.fetch(
       new Request(`http://x/s/${SID}/chat`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...AUTH, "content-type": "application/json" },
         body: JSON.stringify({ chatId: "chat-9", message: "q" }),
       }),
       env,
@@ -315,6 +511,7 @@ describe("POST /s/:sid/chat", () => {
     const rec = JSON.parse(kv.store.get(chatKey(SID, "chat-9"))!.value);
     expect(rec.messages.map((m: any) => m.role)).toEqual(["user", "assistant"]);
     expect(rec.messages[1].content).toBe("Streamed!");
+    expect(rec.messages[1].citations[0].text).toBeTruthy();
   });
 
   it("400s without chatId or message", async () => {
@@ -322,7 +519,7 @@ describe("POST /s/:sid/chat", () => {
     const res = await app.fetch(
       new Request(`http://x/s/${SID}/chat`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { ...AUTH, "content-type": "application/json" },
         body: JSON.stringify({ message: "q", stream: false }),
       }),
       makeEnv(),
@@ -339,7 +536,7 @@ describe("DELETE /s/:sid/papers/:file", () => {
     });
     const env = makeEnv(kv);
     const res = await app.fetch(
-      new Request(`http://x/s/${SID}/papers/laws.pdf`, { method: "DELETE" }),
+      new Request(`http://x/s/${SID}/papers/laws.pdf`, { method: "DELETE", headers: AUTH }),
       env,
       ctx,
     );
@@ -350,7 +547,7 @@ describe("DELETE /s/:sid/papers/:file", () => {
 
   it("404s for a missing paper", async () => {
     const res = await app.fetch(
-      new Request(`http://x/s/${SID}/papers/nope.pdf`, { method: "DELETE" }),
+      new Request(`http://x/s/${SID}/papers/nope.pdf`, { method: "DELETE", headers: AUTH }),
       makeEnv(),
       ctx,
     );
@@ -359,7 +556,7 @@ describe("DELETE /s/:sid/papers/:file", () => {
 });
 
 describe("DELETE /s/:sid (whole session)", () => {
-  it("removes every vector and KV key of the session, leaving other sessions intact", async () => {
+  it("removes every vector and KV key of the session, leaving other sessions and users intact", async () => {
     const kv = makeKv({
       [paperKey(SID, "a.pdf")]: { value: JSON.stringify({ title: "A", summary: "", chunkIds: ["x1", "x2"] }) },
       [paperKey(SID, "b.pdf")]: { value: JSON.stringify({ title: "B", summary: "", chunkIds: ["y1"] }) },
@@ -368,7 +565,7 @@ describe("DELETE /s/:sid (whole session)", () => {
     });
     const env = makeEnv(kv);
 
-    const res = await app.fetch(new Request(`http://x/s/${SID}`, { method: "DELETE" }), env, ctx);
+    const res = await app.fetch(new Request(`http://x/s/${SID}`, { method: "DELETE", headers: AUTH }), env, ctx);
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.removedChunks).toBe(3);
@@ -377,6 +574,8 @@ describe("DELETE /s/:sid (whole session)", () => {
     const deletedIds = (env.VECTORIZE as any).deleteByIds.mock.calls.flatMap((c: any[]) => c[0]);
     expect(deletedIds.sort()).toEqual(["x1", "x2", "y1"]);
 
-    expect([...kv.store.keys()]).toEqual([paperKey(OTHER_SID, "keep.pdf")]);
+    // other session's paper + the auth records survive
+    expect(kv.store.has(paperKey(OTHER_SID, "keep.pdf"))).toBe(true);
+    expect(kv.store.has(`user:${TEST_EMAIL}`)).toBe(true);
   });
 });

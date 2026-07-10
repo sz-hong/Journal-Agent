@@ -15,3 +15,24 @@ export function extractCitations(contexts: RetrievedContext[]): Citation[] {
   }
   return out;
 }
+
+/**
+ * Enrich citations with the highest-scoring matching context passage
+ * (truncated) so stored messages can restore hover previews after reload.
+ */
+export function attachQuotes(
+  citations: Citation[],
+  contexts: RetrievedContext[],
+  maxLen = 500,
+): Citation[] {
+  return citations.map((cit) => {
+    let best: RetrievedContext | undefined;
+    for (const c of contexts) {
+      if (c.title !== cit.title || c.page !== cit.page) continue;
+      if (!best || c.score > best.score) best = c;
+    }
+    if (!best) return { ...cit };
+    const text = best.text.length > maxLen ? best.text.slice(0, maxLen) + "…" : best.text;
+    return { ...cit, text };
+  });
+}
