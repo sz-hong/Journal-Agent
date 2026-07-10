@@ -1210,7 +1210,7 @@
       async function refreshCounts(id) {
         try {
           const [pr, cr] = await Promise.all([authFetch(`/s/${id}/papers`), authFetch(`/s/${id}/chats`)]);
-          const papers = ((await pr.json()).papers || []).length;
+          const papers = ((await pr.json()).papers || []).filter((p) => !isPaperDeleted(id, p.file)).length;
           const chats = ((await cr.json()).chats || []).length;
           cacheCounts(id, { papers, chats });
           const el = document.querySelector(`[data-meta="${CSS.escape(id)}"]`);
@@ -1306,10 +1306,22 @@
       }
       $("newChatBtn").addEventListener("click", newChat);
 
+      // KV 的 list 是最終一致：剛刪除的論文可能還會在清單中殘留最多約一分鐘，
+      // 記下刪除動作、渲染時過濾，避免刪除後卡片又被畫回來。
+      const deletedPapers = new Map(); // `${sid}:${file}` -> 刪除時間
+      const DELETED_TTL = 5 * 60 * 1000;
+      function markPaperDeleted(sid, file) { deletedPapers.set(`${sid}:${file}`, Date.now()); }
+      function isPaperDeleted(sid, file) {
+        const ts = deletedPapers.get(`${sid}:${file}`);
+        if (!ts) return false;
+        if (Date.now() - ts > DELETED_TTL) { deletedPapers.delete(`${sid}:${file}`); return false; }
+        return true;
+      }
+
       async function loadPapers() {
         try {
           const res = await authFetch(`/s/${SID}/papers`);
-          const papers = (await res.json()).papers || [];
+          const papers = ((await res.json()).papers || []).filter((p) => !isPaperDeleted(SID, p.file));
           cacheCounts(SID, { papers: papers.length });
           $("paperCount").textContent = `${papers.length} 篇`;
           renderSidebar();
@@ -1345,6 +1357,7 @@
                 const res = await authFetch(`/s/${SID}/papers/` + encodeURIComponent(card.dataset.file), { method: "DELETE" });
                 const out = await res.json();
                 if (!res.ok) throw new Error(out.error || "delete failed");
+                markPaperDeleted(SID, card.dataset.file);
                 loadPapers();
               } catch (err) {
                 alert("刪除失敗：" + err.message);
