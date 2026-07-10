@@ -255,8 +255,11 @@ app.get("/s/:sid/papers", async (c) => {
   const sid = c.req.param("sid");
   const prefix = paperPrefix(sid);
   const list = await c.env.PAPERS_KV.list({ prefix });
+  // Same explicit file-name sort as the agent tools, so the paper numbers
+  // shown on library cards line up with the (論文N, p.X) citations.
+  const keys = [...list.keys].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const papers = await Promise.all(
-    list.keys.map(async (k) => {
+    keys.map(async (k) => {
       const file = k.name.slice(prefix.length);
       const m = parseManifest(await c.env.PAPERS_KV.get(k.name), file);
       return { file, title: m.title, summary: m.summary, ...(m.card ? { card: m.card } : {}) };

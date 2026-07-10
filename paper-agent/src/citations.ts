@@ -11,7 +11,7 @@ export function extractCitations(contexts: RetrievedContext[]): Citation[] {
     const key = `${c.title}::${c.page}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ title: c.title, page: c.page });
+    out.push({ title: c.title, page: c.page, ...(c.n != null ? { n: c.n } : {}) });
   }
   return out;
 }

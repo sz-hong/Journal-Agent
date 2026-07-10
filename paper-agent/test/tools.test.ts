@@ -94,13 +94,16 @@ describe("toolDefinitions", () => {
 });
 
 describe("executeTool: list_papers", () => {
-  it("lists every paper with file, title, and overview", async () => {
+  it("lists every paper with its number, file, title, and overview", async () => {
     const res = await executeTool(makeEnv(), SID, "list_papers", "{}");
     expect(res.content).toContain("laws.pdf");
     expect(res.content).toContain("Lynch (2024)");
     expect(res.content).toContain(CARD.overview);
     expect(res.content).toContain("bio.pdf");
     expect(res.content).toContain("疾病診斷應用。");
+    // stable numbering by file-name order: bio.pdf → 論文1, laws.pdf → 論文2
+    expect(res.content).toContain("論文1");
+    expect(res.content).toContain("論文2");
   });
 });
 
@@ -128,13 +131,17 @@ describe("executeTool: get_paper_card", () => {
 });
 
 describe("executeTool: search_passages", () => {
-  it("embeds the query, searches the session, and returns numbered citable passages", async () => {
+  it("embeds the query, searches the session, and returns passages labeled with paper numbers", async () => {
     stubEmbeddings();
     const env = makeEnv();
     const res = await executeTool(env, SID, "search_passages", JSON.stringify({ query: "EU AI act regulation" }));
-    expect(res.content).toContain("[1] Lynch (2024) (p.10)");
+    // laws.pdf is 論文2 in file-name order; passages carry (論文N, p.X) labels
+    expect(res.content).toContain("(論文2, p.10)");
     expect(res.content).toContain("EU AI Act regulates live FRT.");
     expect(res.contexts).toHaveLength(2);
+    // contexts carry the paper number for citation chips
+    expect(res.contexts!.find((c) => c.sourceFile === "laws.pdf")!.n).toBe(2);
+    expect(res.contexts!.find((c) => c.sourceFile === "bio.pdf")!.n).toBe(1);
     const opts = (env.VECTORIZE.query as any).mock.calls[0][1];
     expect(opts.topK).toBe(8);
     expect(opts.filter).toEqual({ session_id: SID });

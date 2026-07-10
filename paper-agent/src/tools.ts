@@ -53,7 +53,7 @@ export const toolDefinitions: ToolDefinition[] = [
       name: "search_passages",
       description:
         "Vector-search the papers' full text for passages relevant to a query. Returns numbered " +
-        "passages with title and page so they can be cited as (Title, p.PAGE).",
+        "passages labeled (論文N, p.X) so they can be cited compactly by paper number.",
       parameters: {
         type: "object",
         properties: {
@@ -76,17 +76,23 @@ export const toolDefinitions: ToolDefinition[] = [
 
 const paperPrefix = (sid: string) => `s:${sid}:paper:`;
 
-/** Load every paper manifest in the session (papers per session stay small). */
+/**
+ * Load every paper manifest in the session, numbered 1..N in file-name order
+ * (KV list is lexicographic, so numbering is stable across calls). The number
+ * is the "論文N" the model cites inline instead of long titles.
+ */
 async function listManifests(
   env: Env,
   sid: string,
-): Promise<Array<{ file: string; manifest: PaperManifest }>> {
+): Promise<Array<{ file: string; n: number; manifest: PaperManifest }>> {
   const prefix = paperPrefix(sid);
   const list = await env.PAPERS_KV.list({ prefix });
+  // Explicit sort: numbering must not depend on the backend's list order.
+  const keys = [...list.keys].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return Promise.all(
-    list.keys.map(async (k) => {
+    keys.map(async (k, i) => {
       const file = k.name.slice(prefix.length);
-      return { file, manifest: parseManifest(await env.PAPERS_KV.get(k.name), file) };
+      return { file, n: i + 1, manifest: parseManifest(await env.PAPERS_KV.get(k.name), file) };
     }),
   );
 }
@@ -101,7 +107,12 @@ function cjkRatio(s: string): number {
 
 function formatPassages(contexts: RetrievedContext[]): string {
   if (contexts.length === 0) return "no relevant passages found";
-  return contexts.map((c, i) => `[${i + 1}] ${c.title} (p.${c.page})\n${c.text}`).join("\n\n");
+  return contexts
+    .map((c, i) => {
+      const label = c.n ? `(論文${c.n}, p.${c.page})` : `(${c.title}, p.${c.page})`;
+      return `[${i + 1}] ${label}《${c.title}》\n${c.text}`;
+    })
+    .join("\n\n");
 }
 
 /**
@@ -127,9 +138,9 @@ export async function executeTool(
       if (papers.length === 0) return { content: "（此 session 尚未上傳任何論文）" };
       return {
         content: papers
-          .map(({ file, manifest }) => {
+          .map(({ file, n, manifest }) => {
             const overview = manifest.card?.overview || manifest.summary || "（無摘要）";
-            return `- file: ${file}\n  title: ${manifest.title}\n  overview: ${overview}`;
+            return `- 論文${n} | file: ${file}\n  title: ${manifest.title}\n  overview: ${overview}`;
           })
           .join("\n"),
       };
@@ -143,18 +154,18 @@ export async function executeTool(
         const available = papers.map((p) => p.file).join(", ") || "(none)";
         return { content: `error: unknown file "${file}" — available papers: ${available}` };
       }
-      const { manifest } = hit;
+      const { manifest, n } = hit;
       if (!manifest.card) {
         return {
           content:
-            `《${manifest.title}》尚無結構化卡片（可在論文庫按「重新產生卡片」補產）。` +
+            `論文${n}《${manifest.title}》尚無結構化卡片（可在論文庫按「重新產生卡片」補產）。` +
             `簡短摘要：${manifest.summary || "（無摘要）"}`,
         };
       }
       const card = manifest.card;
       return {
         content:
-          `《${manifest.title}》(file: ${file})\n` +
+          `論文${n}《${manifest.title}》(file: ${file})\n` +
           `OVERVIEW: ${card.overview}\n` +
           `WHY（研究問題與重要性）: ${card.why}\n` +
           `HOW（方法與資料）: ${card.how}\n` +
@@ -174,16 +185,19 @@ export async function executeTool(
         };
       }
       const file = typeof args.file === "string" && args.file ? args.file : undefined;
-      if (file) {
-        const papers = await listManifests(env, sid);
-        if (!papers.some((p) => p.file === file)) {
-          const available = papers.map((p) => p.file).join(", ") || "(none)";
-          return { content: `error: unknown file "${file}" — available papers: ${available}` };
-        }
+      const papers = await listManifests(env, sid);
+      if (file && !papers.some((p) => p.file === file)) {
+        const available = papers.map((p) => p.file).join(", ") || "(none)";
+        return { content: `error: unknown file "${file}" — available papers: ${available}` };
       }
+      const numberByFile = new Map(papers.map((p) => [p.file, p.n]));
       const vec = await embedQuery(env, query);
       let contexts = await queryContexts(env, vec, file ? SEARCH_K_SCOPED : SEARCH_K, sid);
       if (file) contexts = filterBySource(contexts, file);
+      contexts = contexts.map((c) => {
+        const n = numberByFile.get(c.sourceFile);
+        return n ? { ...c, n } : c;
+      });
       return { content: formatPassages(contexts), contexts };
     }
 

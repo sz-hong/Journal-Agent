@@ -25,6 +25,11 @@ describe("extractCitations", () => {
   it("returns [] for no contexts", () => {
     expect(extractCitations([])).toEqual([]);
   });
+
+  it("carries the paper number through to citations when present", () => {
+    const withN = { ...ctx("Lynch (2024)", 10), n: 2 };
+    expect(extractCitations([withN])).toEqual([{ title: "Lynch (2024)", page: 10, n: 2 }]);
+  });
 });
 
 describe("attachQuotes", () => {

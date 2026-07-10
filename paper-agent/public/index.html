@@ -1345,10 +1345,10 @@
           }
           $("papersBody").innerHTML = `<div class="papers-grid">${papers
             .map(
-              (p) => `
+              (p, i) => `
             <div class="paper-card" data-file="${esc(p.file)}">
               <div class="r1">
-                <span class="pill">PDF</span>
+                <span class="pill">論文${i + 1}</span>
                 <span class="sp"></span>
                 <span class="file">${esc(p.file)}</span>
                 <button class="del" title="從論文庫刪除">✕</button>
@@ -1538,11 +1538,13 @@
 
       function citeChip(c) {
         const quote = quoteCache.get(quoteKey(c.title, c.page));
+        // 行內回答引用的是 (論文N, p.X)；標籤顯示同一編號，完整標題放 hover 彈窗
+        const tag = c.n ? `論文${esc(c.n)} · p.${esc(c.page)}` : `${esc(shortTitle(c.title))} · p.${esc(c.page)}`;
         return `
           <span class="cite">
-            <span class="tag">${esc(shortTitle(c.title))} · p.${esc(c.page)}</span>
+            <span class="tag">${tag}</span>
             <span class="cite-pop">
-              <span class="t">${esc(c.title)}</span>
+              <span class="t">${c.n ? `論文${esc(c.n)}：` : ""}${esc(c.title)}</span>
               ${quote ? `<span class="q">${esc(quote)}</span>` : ""}
               <span class="p">第 ${esc(c.page)} 頁${quote ? " · 檢索到的原文段落" : ""}</span>
             </span>

@@ -126,7 +126,7 @@ describe("buildAgentMessages", () => {
     const sys = (msgs[0] as any).content as string;
     expect((msgs[0] as any).role).toBe("system");
     expect(sys).toContain("繁體中文");
-    expect(sys).toContain("(Title, p.PAGE)");
+    expect(sys).toContain("(論文N, p.X)");
     expect(sys).toContain("English");
     expect(sys).toContain("逐維度"); // comparison guidance
     expect(sys).toContain("未涵蓋");
@@ -147,11 +147,11 @@ describe("runAgent", () => {
     expect(events[0]).toMatchObject({ type: "tool", name: "search_passages", args: { query: "EU AI act" } });
     const meta = events[1] as any;
     expect(meta.contexts).toHaveLength(1);
-    expect(meta.citations).toEqual([{ title: "Lynch (2024)", page: 10 }]);
+    expect(meta.citations).toEqual([{ title: "Lynch (2024)", page: 10, n: 1 }]);
 
     expect(result.answer).toBe("答案在此 (Lynch (2024), p.10)");
     expect(result.contexts).toHaveLength(1);
-    expect(result.citations).toEqual([{ title: "Lynch (2024)", page: 10 }]);
+    expect(result.citations).toEqual([{ title: "Lynch (2024)", page: 10, n: 1 }]);
 
     // second round's transcript carries the assistant tool_calls + tool result
     const second = chatBodies[1].messages;

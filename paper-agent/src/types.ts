@@ -95,6 +95,8 @@ export interface RetrievedContext {
   page: number;
   sourceFile: string;
   score: number;
+  /** Session paper number (1-based, file-name order) for compact citations. */
+  n?: number;
 }
 
 /** A deduped source reference shown under an answer. */
@@ -107,6 +109,8 @@ export interface Citation {
    * live SSE meta (the full contexts ride alongside there).
    */
   text?: string;
+  /** Session paper number — the model cites (論文N, p.X); chips show the mapping. */
+  n?: number;
 }
 
 /**
