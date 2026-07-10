@@ -1575,7 +1575,7 @@
           <span class="ai-av" style="flex:none;width:28px;height:28px;border-radius:9px;background:var(--primary-soft2);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;margin-bottom:2px">析</span>
           <div class="box">
             <span class="dots"><span></span><span></span><span></span></span>
-            <span class="lb">正在檢索論文段落…</span>
+            <span class="lb">正在思考…</span>
           </div>`;
         $("logInner").appendChild(el);
         $("log").scrollTop = $("log").scrollHeight;
@@ -1671,6 +1671,16 @@
             throw new Error(err.error || "request failed (" + res.status + ")");
           }
           await readSse(res, {
+            // agent 工具活動 → 更新等待列文字（檢索中／讀取卡片中…）
+            tool: (d) => {
+              const lb = document.querySelector("#thinkingEl .lb");
+              if (!lb) return;
+              const a = d.args || {};
+              if (d.name === "search_passages")
+                lb.textContent = `正在檢索：${a.query || "…"}${a.file ? `（${a.file}）` : ""}`;
+              else if (d.name === "get_paper_card") lb.textContent = `正在讀取論文卡片：${a.file || "…"}`;
+              else if (d.name === "list_papers") lb.textContent = "正在整理論文清單…";
+            },
             meta: (d) => {
               citations = d.citations || [];
               for (const ctx of d.contexts || []) {

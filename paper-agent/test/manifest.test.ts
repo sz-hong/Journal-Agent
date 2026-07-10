@@ -26,4 +26,24 @@ describe("parseManifest", () => {
       chunkIds: [],
     });
   });
+
+  it("round-trips a structured paper card", () => {
+    const card = {
+      overview: "概述",
+      why: "問題",
+      how: "方法",
+      what: "發現",
+      limitations: "限制",
+      generatedAt: 12345,
+    };
+    const raw = JSON.stringify({ title: "T", summary: "S", chunkIds: [], card });
+    expect(parseManifest(raw, "f.pdf").card).toEqual(card);
+  });
+
+  it("drops a malformed card instead of failing the manifest", () => {
+    const raw = JSON.stringify({ title: "T", summary: "S", chunkIds: [], card: { overview: 1 } });
+    const m = parseManifest(raw, "f.pdf");
+    expect(m.title).toBe("T");
+    expect(m.card).toBeUndefined();
+  });
 });

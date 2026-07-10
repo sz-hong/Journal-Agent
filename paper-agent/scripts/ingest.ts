@@ -18,6 +18,7 @@ import { extractPdfPages } from "../src/pdf";
 import { buildVectorRecords } from "../src/ingest-core";
 import { embedTexts } from "../src/openai";
 import { summarizePaper } from "../src/summary";
+import { generatePaperCard } from "../src/card";
 import type { Env, PaperManifest } from "../src/types";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -96,15 +97,23 @@ async function main() {
       { sourceFile: file, title, sessionId },
       (texts) => embedTexts(env, texts),
     );
-    const summary = await summarizePaper(env, title, pages.slice(0, 3));
-    const manifest: PaperManifest = { title, summary, chunkIds: records.map((r) => r.id) };
+    const card = await generatePaperCard(env, title, pages);
+    const summary = card?.overview ?? (await summarizePaper(env, title, pages.slice(0, 3)));
+    const manifest: PaperManifest = {
+      title,
+      summary,
+      chunkIds: records.map((r) => r.id),
+      ...(card ? { card } : {}),
+    };
     for (const r of records) ndjsonLines.push(JSON.stringify(r));
     kvEntries.push({
       key: `s:${sessionId}:paper:${file}`,
       value: JSON.stringify(manifest),
       metadata: { title },
     });
-    console.log(`  ${title}: ${records.length} chunks, summary ${summary ? "OK" : "SKIPPED"}`);
+    console.log(
+      `  ${title}: ${records.length} chunks, card ${card ? "OK" : "SKIPPED"}, summary ${summary ? "OK" : "SKIPPED"}`,
+    );
   }
 
   writeFileSync(VECTORS_FILE, ndjsonLines.join("\n") + "\n", "utf8");

@@ -36,6 +36,37 @@ export interface ChatMessage {
   content: string;
 }
 
+/** OpenAI function-calling tool definition (a chat/completions `tools` entry). */
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+/** One tool invocation requested by the model (arguments still JSON-encoded). */
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+/** Messages exchanged in the tool-calling agent loop (superset of ChatMessage). */
+export type AgentMessage =
+  | ChatMessage
+  | {
+      role: "assistant";
+      content: string | null;
+      tool_calls: Array<{
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+      }>;
+    }
+  | { role: "tool"; tool_call_id: string; content: string };
+
 /** Metadata stored alongside each vector in Vectorize. */
 export interface ChunkMetadata {
   /** The chunk text itself (fed to the LLM at query time). */
@@ -78,6 +109,25 @@ export interface Citation {
   text?: string;
 }
 
+/**
+ * Structured reading card generated from the full paper at ingest time.
+ * Field design follows the WHY/HOW/WHAT scan: values are Traditional Chinese
+ * with technical terms kept in English.
+ */
+export interface PaperCard {
+  /** 3-5 sentence overview (also used as the manifest summary blurb). */
+  overview: string;
+  /** Research question / problem and why it matters. */
+  why: string;
+  /** Method / technical route and the dataset or sample used. */
+  how: string;
+  /** Main findings, including key numbers. */
+  what: string;
+  /** Limitations and unresolved questions. */
+  limitations: string;
+  generatedAt: number;
+}
+
 /** KV manifest value (stored as JSON) describing one ingested paper. */
 export interface PaperManifest {
   title: string;
@@ -85,6 +135,8 @@ export interface PaperManifest {
   summary: string;
   /** Vector ids of every chunk, recorded so the paper can be deleted. */
   chunkIds: string[];
+  /** Structured reading card (absent on papers ingested before this feature). */
+  card?: PaperCard;
 }
 
 /** User-editable profile fields captured at registration / in settings. */

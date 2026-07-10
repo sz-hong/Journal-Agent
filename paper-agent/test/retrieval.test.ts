@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { matchesToContexts, queryContexts, mergeContexts } from "../src/retrieval";
+import { matchesToContexts, queryContexts, mergeContexts, filterBySource } from "../src/retrieval";
 import type { Env, RetrievedContext } from "../src/types";
 
 const matches = [
@@ -55,6 +55,19 @@ describe("mergeContexts", () => {
   it("caps the merged list", () => {
     const many = Array.from({ length: 12 }, (_, i) => ctx(`chunk ${i}`, i / 100, i));
     expect(mergeContexts([many], 8)).toHaveLength(8);
+  });
+
+  it("defaults the cap to 16", () => {
+    const many = Array.from({ length: 20 }, (_, i) => ctx(`chunk ${i}`, i / 100, i));
+    expect(mergeContexts([many])).toHaveLength(16);
+  });
+
+  describe("filterBySource", () => {
+    it("keeps only contexts from the given source file", () => {
+      const list = [ctx("a", 0.9, 1, "laws.pdf"), ctx("b", 0.8, 2, "bio.pdf"), ctx("c", 0.7, 3, "laws.pdf")];
+      expect(filterBySource(list, "laws.pdf").map((c) => c.text)).toEqual(["a", "c"]);
+      expect(filterBySource(list, "nope.pdf")).toEqual([]);
+    });
   });
 });
 

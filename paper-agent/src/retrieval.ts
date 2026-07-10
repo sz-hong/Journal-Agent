@@ -22,7 +22,7 @@ export function matchesToContexts(matches: VectorizeMatch[]): RetrievedContext[]
  * (same source file, page, and text) keeping the best score, sort by score
  * descending, and cap the result.
  */
-export function mergeContexts(lists: RetrievedContext[][], cap = 8): RetrievedContext[] {
+export function mergeContexts(lists: RetrievedContext[][], cap = 16): RetrievedContext[] {
   const byKey = new Map<string, RetrievedContext>();
   for (const list of lists) {
     for (const c of list) {
@@ -32,6 +32,18 @@ export function mergeContexts(lists: RetrievedContext[][], cap = 8): RetrievedCo
     }
   }
   return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, cap);
+}
+
+/**
+ * Keep only contexts from one paper. Used to scope search results Worker-side
+ * (a Vectorize source_file metadata index would only cover newly inserted
+ * vectors, so post-filtering is the migration-free option).
+ */
+export function filterBySource(
+  contexts: RetrievedContext[],
+  sourceFile: string,
+): RetrievedContext[] {
+  return contexts.filter((c) => c.sourceFile === sourceFile);
 }
 
 /**

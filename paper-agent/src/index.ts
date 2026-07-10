@@ -1,13 +1,14 @@
 import { Hono } from "hono";
-import type { Env, ChatMessage, Citation, UserProfile } from "./types";
-import { embedQuery, embedTexts, chat, chatStream } from "./openai";
-import { queryContexts, mergeContexts } from "./retrieval";
-import { buildChatMessages } from "./prompt";
-import { extractCitations, attachQuotes } from "./citations";
+import type { Env, ChatMessage, ChunkMetadata, PdfPage, UserProfile } from "./types";
+import { embedTexts } from "./openai";
+import { buildAgentMessages } from "./prompt";
+import { attachQuotes } from "./citations";
 import { extractPdfPages } from "./pdf";
 import { buildVectorRecords } from "./ingest-core";
-import { planQueries } from "./plan";
+import { runAgent } from "./agent";
+import type { AgentResult } from "./agent";
 import { summarizePaper } from "./summary";
+import { generatePaperCard } from "./card";
 import { parseManifest } from "./manifest";
 import { chatKey, chatPrefix, newChat, loadChat, appendMessages, listChats } from "./chats";
 import {
@@ -22,8 +23,8 @@ import {
   removeUserSession,
 } from "./auth";
 
-const PER_QUERY_K = 5;
 const DELETE_BATCH = 1000;
+const GET_BY_IDS_BATCH = 20;
 const HISTORY_WINDOW = 8;
 const SID_RE = /^[A-Za-z0-9-]{8,64}$/;
 const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
@@ -174,10 +175,12 @@ app.delete("/me/sessions/:id", async (c) => {
 });
 
 /**
- * Q&A within one session's papers. History lives server-side in the chat
- * record. Pipeline: plan queries → retrieve (session-filtered) → merge →
- * grounded generation. SSE by default; JSON when stream:false. The completed
- * turn (user + assistant messages) is persisted back to the chat record.
+ * Q&A within one session's papers, run as a tool-calling agent loop: the
+ * model decides which tools to call (list_papers / get_paper_card /
+ * search_passages) and how many rounds, then streams its grounded answer.
+ * History lives server-side in the chat record. SSE by default (events:
+ * tool / meta / delta / done); JSON when stream:false. The completed turn
+ * (user + assistant messages) is persisted back to the chat record.
  */
 app.post("/s/:sid/chat", async (c) => {
   const sid = c.req.param("sid");
@@ -198,30 +201,24 @@ app.post("/s/:sid/chat", async (c) => {
   const history: ChatMessage[] = (record?.messages ?? [])
     .slice(-HISTORY_WINDOW)
     .map((m) => ({ role: m.role, content: m.content }));
-
-  const queries = await planQueries(c.env, message, history);
-  const lists = await Promise.all(
-    queries.map(async (q) => {
-      const vec = await embedQuery(c.env, q);
-      return queryContexts(c.env, vec, PER_QUERY_K, sid);
-    }),
-  );
-  const contexts = mergeContexts(lists);
-  const citations = extractCitations(contexts);
-  const messages = buildChatMessages(message, contexts, history);
+  const messages = buildAgentMessages(message, history);
 
   // Stored citations carry the retrieved passage so hover previews survive reload.
-  const persistTurn = async (answer: string, cites: Citation[]) => {
+  const persistTurn = async (result: AgentResult) => {
     await appendMessages(c.env, sid, chatId, [
       { role: "user", content: message },
-      { role: "assistant", content: answer, citations: attachQuotes(cites, contexts) },
+      {
+        role: "assistant",
+        content: result.answer,
+        citations: attachQuotes(result.citations, result.contexts),
+      },
     ]);
   };
 
   if (stream === false) {
-    const answer = await chat(c.env, messages);
-    await persistTurn(answer, citations);
-    return c.json({ answer, citations, contexts, queries });
+    const result = await runAgent(c.env, sid, messages, () => {});
+    await persistTurn(result);
+    return c.json({ answer: result.answer, citations: result.citations, contexts: result.contexts });
   }
 
   const encoder = new TextEncoder();
@@ -230,14 +227,13 @@ app.post("/s/:sid/chat", async (c) => {
     async start(controller) {
       const send = (event: string, data: unknown) =>
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      send("meta", { citations, contexts, queries });
       try {
-        let answer = "";
-        for await (const text of chatStream(env, messages)) {
-          answer += text;
-          send("delta", { text });
-        }
-        await persistTurn(answer, citations);
+        const result = await runAgent(env, sid, messages, (e) => {
+          if (e.type === "delta") send("delta", { text: e.text });
+          else if (e.type === "meta") send("meta", { citations: e.citations, contexts: e.contexts });
+          else send("tool", { name: e.name, args: e.args });
+        });
+        await persistTurn(result);
         send("done", {});
       } catch (e) {
         send("error", { message: e instanceof Error ? e.message : String(e) });
@@ -263,7 +259,7 @@ app.get("/s/:sid/papers", async (c) => {
     list.keys.map(async (k) => {
       const file = k.name.slice(prefix.length);
       const m = parseManifest(await c.env.PAPERS_KV.get(k.name), file);
-      return { file, title: m.title, summary: m.summary };
+      return { file, title: m.title, summary: m.summary, ...(m.card ? { card: m.card } : {}) };
     }),
   );
   return c.json({ papers });
@@ -293,15 +289,18 @@ app.post("/s/:sid/ingest", async (c) => {
     return c.json({ error: "no extractable text in PDF" }, 422);
   }
 
-  const summary = await summarizePaper(c.env, title, pages.slice(0, 3));
+  // Structured card over the full paper; falls back to the shallow summary
+  // when card generation fails (both are best-effort).
+  const card = await generatePaperCard(c.env, title, pages);
+  const summary = card?.overview ?? (await summarizePaper(c.env, title, pages.slice(0, 3)));
 
   await c.env.VECTORIZE.upsert(records as unknown as VectorizeVector[]);
-  const manifest = { title, summary, chunkIds: records.map((r) => r.id) };
+  const manifest = { title, summary, chunkIds: records.map((r) => r.id), ...(card ? { card } : {}) };
   await c.env.PAPERS_KV.put(paperKey(sid, file.name), JSON.stringify(manifest), {
     metadata: { title },
   });
 
-  return c.json({ added: records.length, title, file: file.name, summary });
+  return c.json({ added: records.length, title, file: file.name, summary, ...(card ? { card } : {}) });
 });
 
 /** Delete one paper from this session (vectors + manifest). */
@@ -319,6 +318,58 @@ app.delete("/s/:sid/papers/:file", async (c) => {
   }
   await c.env.PAPERS_KV.delete(key);
   return c.json({ deleted: file, removedChunks: manifest.chunkIds.length });
+});
+
+/**
+ * (Re)generate a paper's structured card from its stored chunk vectors —
+ * lets papers ingested before the card feature get one without re-uploading.
+ */
+app.post("/s/:sid/papers/:file/card", async (c) => {
+  const sid = c.req.param("sid");
+  const file = decodeURIComponent(c.req.param("file"));
+  const key = paperKey(sid, file);
+  const raw = await c.env.PAPERS_KV.get(key);
+  if (raw == null) {
+    return c.json({ error: "paper not found" }, 404);
+  }
+  const manifest = parseManifest(raw, file);
+
+  // Reconstruct approximate page texts from the chunk metadata (chunks
+  // overlap, so pages read slightly duplicated — fine for summarization).
+  const byPage = new Map<number, Array<{ idx: number; text: string }>>();
+  for (let i = 0; i < manifest.chunkIds.length; i += GET_BY_IDS_BATCH) {
+    const vectors = await c.env.VECTORIZE.getByIds(
+      manifest.chunkIds.slice(i, i + GET_BY_IDS_BATCH),
+    );
+    for (const v of vectors ?? []) {
+      const md = v.metadata as unknown as ChunkMetadata | undefined;
+      if (!md || typeof md.text !== "string" || typeof md.page !== "number") continue;
+      const idx = Number(String(v.id).match(/::c(\d+)$/)?.[1] ?? 0);
+      const chunks = byPage.get(md.page) ?? [];
+      chunks.push({ idx, text: md.text });
+      byPage.set(md.page, chunks);
+    }
+  }
+  const pages: PdfPage[] = [...byPage.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([page, chunks]) => ({
+      page,
+      text: chunks
+        .sort((a, b) => a.idx - b.idx)
+        .map((ch) => ch.text)
+        .join("\n"),
+    }));
+  if (pages.length === 0) {
+    return c.json({ error: "no stored text for this paper" }, 422);
+  }
+
+  const card = await generatePaperCard(c.env, manifest.title, pages);
+  if (!card) {
+    return c.json({ error: "card generation failed" }, 502);
+  }
+  const updated = { ...manifest, summary: card.overview, card };
+  await c.env.PAPERS_KV.put(key, JSON.stringify(updated), { metadata: { title: manifest.title } });
+  return c.json({ card, summary: card.overview });
 });
 
 /** List this session's chat rooms (most recently active first). */
